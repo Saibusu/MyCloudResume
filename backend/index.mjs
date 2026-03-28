@@ -20,9 +20,7 @@ export const handler = async (event) => {
   try {
     // 只有在真正需要時才初始化 Prisma
     if (!prisma) {
-        prisma = new PrismaClient({
-          datasourceUrl: process.env.DATABASE_URL, 
-        });
+        prisma = new PrismaClient();
       }
 
     const updatedVisitor = await prisma.visitor.update({
