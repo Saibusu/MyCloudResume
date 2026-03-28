@@ -21,11 +21,7 @@ export const handler = async (event) => {
     // 只有在真正需要時才初始化 Prisma
     if (!prisma) {
         prisma = new PrismaClient({
-          datasources: {
-            db: {
-              url: process.env.DATABASE_URL,
-            },
-          },
+          datasourceUrl: process.env.DATABASE_URL, // Prisma 7 專用新語法
         });
       }
 
