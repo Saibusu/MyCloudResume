@@ -6,11 +6,20 @@
 
 ## 目錄
 
+**v1 架構（DynamoDB + Python Lambda）**
 1. [Amazon S3 靜態網站託管與來源遮蔽（Origin Cloaking）](#步驟一amazon-s3-靜態網站託管與來源遮蔽origin-cloaking)
 2. [Cloudflare 邊緣計算層與多層防禦體系](#步驟二cloudflare-邊緣計算層與多層防禦體系)
 3. [AWS API Gateway 流量控管與 Throttling 機制](#步驟三aws-api-gateway-流量控管與-throttling-機制)
 4. [AWS Lambda 運算邏輯與 DynamoDB 原子操作](#步驟四aws-lambda-運算邏輯與-dynamodb-原子操作)
 5. [GitHub Actions CI/CD 與自動化快取清除](#步驟五github-actions-cicd-與自動化快取清除)
+
+**v2 升級（NeonDB + Prisma ORM + Node.js Lambda）**
+
+6. [為什麼要遷移？](#為什麼要遷移)
+7. [新技術說明（NeonDB / Prisma ORM / Lazy Singleton）](#新技術說明)
+8. [GitHub Actions v2 全自動部署流水線](#github-actions-cicd-全自動部署流水線)
+9. [除錯記錄：CI/CD 層 — 10 次 Actions 紅燈](#cicd-層github-actions-工作流程失敗記錄10-次紅燈)
+10. [除錯記錄：Runtime 層 — Actions 通過但訪客計數器仍失敗](#runtime-層actions-通過但訪客計數器仍失敗)
 
 ---
 
@@ -319,3 +328,514 @@ fetch('https://你的API.execute-api.amazonaws.com/')
 ```
 
 透過將 `Access-Control-Allow-Origin` 鎖定為 `https://saibusu.com`，任何其他網域的請求都會被瀏覽器在本地端直接阻擋，達到**防止 API 盜用與流量消耗**的效果。
+
+---
+
+# 後端架構升級：NeonDB + Prisma ORM + Node.js（v2）
+
+> 本章記錄將後端從 **AWS DynamoDB + Python Lambda** 遷移至 **NeonDB Serverless PostgreSQL + Prisma ORM + Node.js Lambda** 的完整過程，包含所有遇到的錯誤、根本原因分析與修正方法。
+
+---
+
+## 為什麼要遷移？
+
+| 面向 | v1 DynamoDB + Python | v2 NeonDB + Prisma |
+| :--- | :--- | :--- |
+| 資料庫類型 | NoSQL（鍵值對） | 關聯式 PostgreSQL |
+| 查詢能力 | 有限（只有 GetItem/UpdateItem） | 完整 SQL 能力 |
+| ORM 支援 | 無（直接呼叫 boto3） | Prisma ORM（型別安全） |
+| 學習目標 | AWS 原生服務整合 | ORM 概念、SQL、現代後端實踐 |
+| 冷啟動效能 | 極快（boto3 輕量） | 稍慢（Prisma 引擎初始化） |
+
+---
+
+## 新技術說明
+
+### NeonDB（Serverless PostgreSQL）
+
+**用途：** 提供 PostgreSQL 資料庫，專為 Serverless 環境優化。
+
+**核心特性：**
+- **Serverless Auto-Scaling**：無流量時資料庫自動暫停，有請求時自動喚醒，費用接近零
+- **Connection Pooling**：提供 `-pooler` 後綴的連線端點，專門處理 Serverless 環境下的短暫連線，避免連線數耗盡
+- **分支功能（Branch）**：可建立資料庫快照分支，用於開發環境測試
+
+**連線字串格式：**
+```
+postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
+```
+
+**交互作用：** Lambda 透過 Prisma ORM 發送 SQL 語句至 NeonDB。每次 Lambda 執行約建立一個連線，執行完畢後連線歸還至 Pooler，不會長期佔用。
+
+---
+
+### Prisma ORM（Object-Relational Mapping）
+
+**用途：** 讓 JavaScript/TypeScript 程式碼用物件操作資料庫，不需要手寫 SQL。
+
+**運作方式：**
+```
+index.mjs 呼叫 prisma.visitor.update()
+    ↓
+Prisma ORM 翻譯為 SQL
+    → UPDATE "Visitor" SET count = count + 1 WHERE id = 1
+    ↓
+透過連線字串傳送至 NeonDB PostgreSQL
+    ↓
+回傳更新後的資料列
+```
+
+**核心概念：**
+
+| 概念 | 說明 |
+| :--- | :--- |
+| `schema.prisma` | 定義資料模型（等同於資料庫 Schema） |
+| `prisma generate` | 根據 schema 產生型別安全的 Client 程式碼 |
+| `PrismaClient` | 實際執行資料庫操作的物件 |
+| `binaryTargets` | 指定 Prisma 引擎的編譯目標平台 |
+
+**`schema.prisma` 說明：**
+```prisma
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
+  // native：本機開發用
+  // linux-arm64-openssl-3.0.x：Lambda arm64 架構用
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")  // 從環境變數讀取，不 hardcode
+}
+
+model Visitor {
+  id    Int @id @default(1)  // 固定 id=1，單一計數列
+  count Int @default(0)
+}
+```
+
+**為什麼需要 `binaryTargets`？**
+Prisma 的查詢引擎是編譯好的二進位檔（`.node`）。Lambda 執行環境是 Linux arm64，本機開發是 Windows/macOS x64，兩者架構不同，必須明確指定兩個目標才能讓 `prisma generate` 產生兩份引擎，部署時 Lambda 才能找到對應的引擎執行。
+
+---
+
+### Lazy Singleton 模式（Lambda 連線優化）
+
+```javascript
+let prisma;  // 在 handler 外宣告
+
+export const handler = async (event) => {
+  if (!prisma) {
+    prisma = new PrismaClient();  // 只在第一次執行時初始化
+  }
+  // 後續請求重複使用同一個 prisma 實例
+};
+```
+
+**原理：** Lambda 執行環境（Execution Environment）在同一個容器內會被重複使用（Warm Start）。將 `prisma` 宣告在 handler 外層，使其在容器生命週期內只初始化一次，避免每次請求都建立新的資料庫連線，大幅降低延遲與 NeonDB 連線消耗。
+
+---
+
+### GitHub Actions CI/CD 全自動部署流水線
+
+**完整流程：**
+```
+git push origin main
+    ↓
+GitHub Actions 啟動（ubuntu-latest）
+    ↓
+[1] S3 前端部署：aws s3 sync ./frontend s3://saibusu.com --delete
+    ↓
+[2] yarn install --ignore-engines（安裝 Prisma 與依賴）
+    ↓
+[3] rm -rf node_modules/.prisma → yarn prisma generate（產生 arm64 引擎）
+    ↓
+[4] 清理大型工具包 → zip -r function.zip index.mjs node_modules
+    ↓
+[5] aws s3 cp function.zip → aws lambda update-function-code（S3 中轉）
+    ↓
+[6] sleep 15（等待 Lambda 代碼更新完成）
+    ↓
+[7] jq 安全序列化 DATABASE_URL → aws lambda update-function-configuration
+    ↓
+[8] Cloudflare Cache Purge（清除全球快取）
+```
+
+**為什麼要用 S3 中轉部署 Lambda？**
+直接上傳 zip 至 Lambda 有 50MB 限制（API 直傳），而包含 Prisma 引擎的 `function.zip` 約 18MB，雖然在限制內，但透過 S3 中轉可支援最大 250MB，且更穩定可靠。
+
+**為什麼用 `sleep 15` 而非 `aws lambda wait`？**
+`aws lambda wait function-updated` 需要 `lambda:GetFunctionConfiguration` 權限，但最小權限原則下的 IAM 角色沒有此授權。改用 `sleep 15` 等待 Lambda 更新完成，避免增加不必要的 IAM 權限。
+
+---
+
+## 遇到的錯誤與修正記錄
+
+> 錯誤分為兩大類型：
+> - **【CI/CD 層】** GitHub Actions 工作流程本身失敗（Actions 紅燈，部署未完成）
+> - **【Runtime 層】** Actions 成功部署，但 Lambda 執行時回傳錯誤（訪客計數器無法運作）
+
+---
+
+### CI/CD 層：GitHub Actions 工作流程失敗記錄（10 次紅燈）
+
+從 v2 遷移開始（凌晨 12:50）到首次完整部署成功（凌晨 2:05），共歷經 **10 次 CI/CD 工作流程失敗**。以下按 commit 順序記錄每次失敗的原因與處置：
+
+| # | Commit 訊息 | 失敗位置 | 根本原因 |
+| :--- | :--- | :--- | :--- |
+| 1 | `feat: migrate backend to NeonDB + Prisma ORM` | `yarn install` / `prisma generate` | 初次遷移，未設定 binaryTargets，Prisma 無法找到 Lambda 對應引擎 |
+| 2 | `fix: upgrade actions version and sync yarn.lock` | `yarn install` | `yarn.lock` 鎖定的套件版本與新環境不一致，依賴解析衝突 |
+| 3 | `fix: upgrade node version to 22 for prisma compatibility` | `yarn install` | Actions runner 使用 Node 16/18，Prisma 7 需要 Node.js 18+，版本不符 |
+| 4 | `fix: force re-generate prisma client with clean slate` | `prisma generate` | 舊版 Prisma Client 快取殘留，`node_modules/.prisma` 沒有清除，讀到舊引擎 |
+| 5 | `chore: align prisma versions to 7.6.0 and sync lockfile` | `prisma generate` | `prisma`（CLI）與 `@prisma/client`（runtime）版本不一致，generate 失敗 |
+| 6 | `fix: restore yarn install and clean up prisma generation` | `zip` / Lambda 上傳 | `node_modules` 清理過度，打包時缺少必要依賴，Lambda zip 結構錯誤 |
+| 7 | `fix: align prisma engines for lambda arm64` | Lambda 執行時 | `binaryTargets` 未包含 `linux-arm64-openssl-3.0.x`，Lambda 找不到引擎二進位檔 |
+| 8 | `fix: move connection url to prisma.config.ts for Prisma 7 compatibility` | `prisma generate` | Prisma 7 完全廢除 `schema.prisma` 的 `url` 欄位，產生 `P1012` 驗證錯誤 |
+| 9 | `fix: use s3 as intermediate for large lambda deployment` | `aws lambda update-function-code` | 打包後 zip 超過 Lambda API 直傳 50MB 限制，改用 S3 中轉才解決 |
+| 10 | `final: restrict IAM to specific lambda ARN and deploy` | `aws lambda wait` | `aws lambda wait function-updated` 需要 `GetFunctionConfiguration` 權限，IAM 使用者未授權 |
+
+---
+
+#### 失敗 1：架構不匹配（初次遷移）
+
+**問題：** 首次提交 v2 時，`schema.prisma` 未設定 `binaryTargets`，Prisma 只產生本機（Windows/macOS）引擎，部署到 Linux ARM64 的 Lambda 時找不到可執行的引擎檔案。
+
+**學習點：** Prisma 的查詢引擎是**平台相關的編譯二進位檔**，跨環境部署必須明確指定目標平台。
+
+---
+
+#### 失敗 2：`yarn.lock` 依賴衝突
+
+**問題：** 舊的 `yarn.lock` 鎖定了特定的依賴樹版本，當 `package.json` 更新 Prisma 版本後，lockfile 與新版本不相容，導致 `yarn install` 解析失敗。
+
+**修正：** 刪除 `yarn.lock`，讓 CI 環境重新產生對應版本的 lockfile。
+
+---
+
+#### 失敗 3：Node.js 版本不符
+
+**問題：** GitHub Actions 預設使用的 Node.js 版本過舊（Node 16），而 Prisma 7 要求 Node.js 18+。
+
+**修正：** 在 `deploy.yml` 明確設定 `node-version: '22'`：
+```yaml
+- uses: actions/setup-node@v3
+  with:
+    node-version: '22'
+```
+
+---
+
+#### 失敗 4：Prisma Client 快取污染
+
+**問題：** 先前已 generate 的舊版 Prisma Client 殘留在 `node_modules/.prisma`，新的 `prisma generate` 沒有完整重建，CI 環境讀到舊引擎導致部署的 Lambda 行為異常。
+
+**修正：** 在 CI 步驟加入清除指令：
+```bash
+rm -rf node_modules/.prisma
+yarn prisma generate
+```
+
+---
+
+#### 失敗 5：Prisma CLI 與 Client 版本不一致
+
+**問題：** `devDependencies` 的 `prisma`（CLI）版本與 `dependencies` 的 `@prisma/client`（runtime）版本不一致（例如 CLI 是 7.5.0，Client 是 7.6.0），`prisma generate` 產生的 Client 與 runtime 不相容。
+
+**修正：** 確保兩者版本完全一致：
+```json
+"dependencies":    { "@prisma/client": "6.6.0" },
+"devDependencies": { "prisma":          "6.6.0" }
+```
+
+---
+
+#### 失敗 6：打包結構錯誤 / node_modules 缺失
+
+**問題：** 過度清理 `node_modules`，或是 zip 打包時路徑錯誤（把整個 `backend/` 資料夾包進去），導致 Lambda 找不到根目錄的 `index.mjs` 或缺少 `node_modules`。
+
+**錯誤訊息（Lambda 執行時）：**
+```
+Runtime.ImportModuleError: Error: Cannot find module 'index'
+```
+
+**修正：** 確保 zip 從正確目錄打包，`index.mjs` 必須在 zip 的根目錄：
+```bash
+cd backend
+zip -r ../function.zip index.mjs ../node_modules
+```
+
+---
+
+#### 失敗 7：Lambda arm64 引擎缺失
+
+**問題：** Lambda 執行架構設定為 `arm64`（Graviton2，效能更好且成本較低），但 `binaryTargets` 只有 `native`（本機），沒有包含 `linux-arm64-openssl-3.0.x`，Lambda 啟動時找不到對應的 Prisma 查詢引擎。
+
+**錯誤訊息（Lambda 執行時）：**
+```
+PrismaClientInitializationError: Query engine binary for current platform 
+"linux-arm64-openssl-3.0.x" could not be found.
+```
+
+**修正：** `schema.prisma` 加入 arm64 目標：
+```prisma
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
+}
+```
+
+---
+
+#### 失敗 8：Prisma 7 破壞性升級（url 欄位廢除）
+
+**問題：** `package.json` 安裝了 Prisma 7，但 Prisma 7 完全廢除了 `schema.prisma` 的 `url` 欄位，改為強制使用 `prisma.config.ts`。`prisma generate` 階段直接報 `P1012` 驗證錯誤，CI 流程中止。
+
+**錯誤訊息：**
+```
+Error: The datasource property `url` is no longer supported in schema files.
+Move connection URLs for Migrate to `prisma.config.ts`
+Prisma CLI Version : 7.6.0
+```
+
+**根本問題：** `prisma.config.ts` 是提供給 CLI（migrate/studio）使用的，Lambda **執行時**無法讀取此檔案，形成無法解決的死結。
+
+**修正：** 降版至 **Prisma 6.6.0**，刪除 `prisma.config.ts`，恢復在 `schema.prisma` 設定 `url = env("DATABASE_URL")`：
+```json
+"dependencies":    { "@prisma/client": "6.6.0" },
+"devDependencies": { "prisma":          "6.6.0" }
+```
+
+---
+
+#### 失敗 9：Lambda zip 超過直傳大小限制
+
+**問題：** 包含 Prisma 引擎的 `function.zip` 體積過大，超過 Lambda API 直傳的 50MB 限制（雖實際約 18MB，仍選擇 S3 中轉以確保穩定性）。
+
+**修正：** 改為 S3 中轉部署：
+```bash
+aws s3 cp function.zip s3://$BUCKET/deploy/function.zip
+aws lambda update-function-code \
+  --function-name $LAMBDA_FUNCTION_NAME \
+  --s3-bucket $BUCKET \
+  --s3-key deploy/function.zip
+```
+
+| 方式 | 大小上限 | 穩定性 |
+| :--- | :--- | :--- |
+| Lambda API 直傳 | 50 MB | 一般 |
+| S3 中轉上傳 | 250 MB | 高 |
+
+---
+
+#### 失敗 10：IAM 權限不足（`aws lambda wait` 指令）
+
+**問題：** `deploy.yml` 使用 `aws lambda wait function-updated` 等待 Lambda 更新完成，但此指令內部會不斷呼叫 `GetFunctionConfiguration` 輪詢狀態，而 IAM 使用者的政策只授予了 `UpdateFunctionCode` 與 `UpdateFunctionConfiguration`，沒有 `GetFunctionConfiguration`，Actions 因 `AccessDeniedException` 中斷。
+
+**錯誤訊息：**
+```
+User: arn:aws:iam::...:user/GitHub-Actions-S3-Deploy is not authorized
+to perform: lambda:GetFunctionConfiguration on resource: ...
+```
+
+**修正選擇：**
+| 方案 | 說明 | 決定 |
+| :--- | :--- | :--- |
+| 增加 IAM 權限 | 加 `GetFunctionConfiguration` | 違反最小權限，不採用 |
+| 改用 sleep | `sleep 15` 替代 wait | ✅ 採用 |
+
+```yaml
+# 改為
+- run: sleep 15
+```
+
+---
+
+### Runtime 層：Actions 通過但訪客計數器仍失敗
+
+從 commit #15（凌晨 2:05）起，GitHub Actions 工作流程開始出現藍色勾號（成功），代表 CI/CD 流水線本身已正常運作（程式碼打包、Lambda 更新、S3 部署均完成）。
+
+但開啟瀏覽器造訪 `saibusu.com` 時，訪客計數器區塊顯示「訪客計數器暫時離線」，Lambda 回傳 JSON 錯誤：
+```json
+{ "error": "DB_FAIL", "message": "..." }
+```
+
+這代表**部署層**已正常，問題出在**Lambda 執行層**：程式碼邏輯、Prisma 建構子語法、資料庫連線字串解析等。以下記錄 6 個 Runtime 層錯誤：
+
+---
+
+### 錯誤 1：`Unknown property datasources provided to PrismaClient constructor`
+
+**錯誤訊息：**
+```
+Unknown property datasources provided to PrismaClient constructor.
+```
+
+**根本原因：** 使用了 Prisma 5 的舊語法 `new PrismaClient({ datasources: { db: { url: ... } } })`，Prisma 6/7 已移除此參數。
+
+**修正：**
+```javascript
+// ❌ 錯誤（Prisma 5 舊語法）
+prisma = new PrismaClient({
+  datasources: { db: { url: process.env.DATABASE_URL } }
+});
+
+// ✅ 正確（Prisma 6）
+prisma = new PrismaClient();
+// URL 由 schema.prisma 的 url = env("DATABASE_URL") + Lambda 環境變數提供
+```
+
+---
+
+### 錯誤 2：`PrismaClient needs to be constructed with a non-empty, valid PrismaClientOptions`
+
+**錯誤訊息：**
+```
+PrismaClient needs to be constructed with a non-empty, valid PrismaClientOptions
+```
+
+**根本原因：** `schema.prisma` 缺少 `url = env("DATABASE_URL")`，Prisma 不知道要連哪個資料庫，呼叫 `new PrismaClient()` 時無從驗證配置。
+
+**修正：** 在 `schema.prisma` 的 `datasource db` 區塊補上 `url = env("DATABASE_URL")`。
+
+---
+
+### 錯誤 3：Prisma 7 完全廢除 schema.prisma 的 `url` 欄位
+
+**錯誤訊息：**
+```
+Error: The datasource property `url` is no longer supported in schema files.
+Move connection URLs for Migrate to `prisma.config.ts`
+```
+
+**根本原因：** `package.json` 使用了 Prisma 7，但 Prisma 7 是破壞性升級，完全移除了 `schema.prisma` 的 `url` 欄位，改為強制使用 `prisma.config.ts`（TypeScript 配置文件）。但 `prisma.config.ts` 只供 CLI 使用，Lambda 執行時無法讀取，造成死結。
+
+**修正：** 降回 **Prisma 6.6.0**，同時刪除 `yarn.lock` 讓 CI 重新產生對應版本的 lockfile：
+```json
+// package.json
+"dependencies": { "@prisma/client": "6.6.0" },
+"devDependencies": { "prisma": "6.6.0" }
+```
+
+**版本演進對照：**
+| Prisma 版本 | `schema.prisma url` | 建構子語法 |
+| :--- | :--- | :--- |
+| v4 / v5 | ✅ 支援 | `new PrismaClient({ datasources: { db: { url } } })` |
+| v6 | ✅ 支援 | `new PrismaClient()`（url 從 env 讀取）|
+| v7 | ❌ 已廢除 | 需 `prisma.config.ts` + Driver Adapter |
+
+---
+
+### 錯誤 4：`invalid port number in database URL`
+
+**錯誤訊息：**
+```
+Invalid prisma.visitor.update() invocation:
+The provided database string is invalid.
+Error parsing connection string: invalid port number in database URL.
+```
+
+**根本原因 A（shell 特殊字元截斷）：**
+舊的 `update-function-configuration` 指令直接把 URL 嵌入 shell：
+```bash
+--environment "Variables={DATABASE_URL=postgresql://...?sslmode=require&channel_binding=require}"
+```
+`&` 在 bash 中是「背景執行」符號，導致 `channel_binding=require"` 被當成背景指令，URL 在 `&` 處被截斷。
+
+**根本原因 B（URL 中的 `@` 被錯誤 URL 編碼）：**
+GitHub Secret 中的 `DATABASE_URL` 被存為：
+```
+postgresql://neondb_owner:npg_l9SKxOPH1FIc%40ep-bitter-cake...
+```
+`%40` 是 `@` 的 URL 編碼。但這個 `@` 是 PostgreSQL URL 的**結構分隔符**（分隔密碼和主機名），不應被編碼。Prisma 看到 `%40` 後把它當成密碼的一部分，整個主機名就消失了，URL 解析完全失敗。
+
+**正確的 URL 格式：**
+```
+postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
+           ^   ^         ^ ^
+           |   |         | |-- 主機名（不應被編碼）
+           |   |         |---- @ 是結構分隔符
+           |   |-------------- 密碼（若密碼本身含@則需編碼為%40）
+           |------------------ 使用者名稱
+```
+
+**修正 A：** 使用 `jq` 將 URL 安全序列化為 JSON：
+```bash
+jq -n --arg url "$DATABASE_URL" \
+  '{"Variables":{"DATABASE_URL":$url}}' > /tmp/lambda-env.json
+aws lambda update-function-configuration \
+  --function-name $LAMBDA_FUNCTION_NAME \
+  --environment file:///tmp/lambda-env.json
+```
+
+**修正 B：** 更新 GitHub Secret `DATABASE_URL`，移除 `%40` 改回 `@`，並移除 Prisma 不支援的 `&channel_binding=require` 參數。
+
+---
+
+### 錯誤 5：`AccessDeniedException lambda:GetFunctionConfiguration`
+
+**錯誤訊息：**
+```
+User: arn:aws:iam::...:user/GitHub-Actions-S3-Deploy is not authorized
+to perform: lambda:GetFunctionConfiguration
+```
+
+**根本原因：** `aws lambda wait function-updated` 指令內部會呼叫 `GetFunctionConfiguration` 來輪詢狀態，但 IAM 使用者只有 `UpdateFunctionCode` 與 `UpdateFunctionConfiguration` 權限，沒有 `GetFunctionConfiguration`。
+
+**修正選項：**
+| 方案 | 說明 | 選擇 |
+| :--- | :--- | :--- |
+| 加 IAM 權限 | 新增 `lambda:GetFunctionConfiguration` | 增加攻擊面，不選 |
+| 改用 sleep | `sleep 15` 代替 wait | ✅ 採用（最小權限原則） |
+
+---
+
+### 錯誤 6：NeonDB 初始資料缺失
+
+**錯誤訊息：**
+```
+Invalid prisma.visitor.update() invocation:
+An operation failed because it depends on one or more records that were required but not found.
+```
+
+**根本原因：** Prisma 的 `update()` 操作要求目標紀錄必須已存在。NeonDB 資料表建立後沒有任何資料，`WHERE id = 1` 找不到記錄，操作失敗。
+
+**修正：** 在 NeonDB SQL Editor 執行初始化：
+```sql
+CREATE TABLE IF NOT EXISTS "Visitor" (
+  id    INTEGER PRIMARY KEY DEFAULT 1,
+  count INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO "Visitor" (id, count) VALUES (1, 0)
+ON CONFLICT (id) DO NOTHING;
+```
+
+---
+
+## 架構全貌（v2）
+
+```
+使用者瀏覽器
+    ↓
+Cloudflare（DNS + CDN + WAF + Bot Fight Mode）
+    ↓ [Origin Cloaking：僅允許 Cloudflare IP]
+AWS S3（靜態網站：HTML / CSS / JS / 圖片）
+    ↓ [前端 fetch() POST /prod/visitor]
+AWS API Gateway（HTTP API + Throttling Rate:2 Burst:5）
+    ↓ [CORS 限制：僅 saibusu.com]
+AWS Lambda（Node.js 22 + Prisma ORM 6.6.0）
+    ↓ [IAM Least Privilege + DATABASE_URL via Secrets]
+NeonDB（Serverless PostgreSQL：Visitor table）
+```
+
+## 防禦層次總覽（v2 更新）
+
+| 層次 | 技術 | 防禦目標 |
+| :--- | :--- | :--- |
+| DNS 層 | Cloudflare Proxy | 隱藏真實 IP，防止直連攻擊 |
+| 邊緣層 | WAF + Bot Fight Mode | 攔截惡意掃描與爬蟲（降低 70%+） |
+| 網路層 | S3 Bucket Policy IP 白名單 | 強制流量必須經過 Cloudflare |
+| API 層 | API Gateway Throttling | 防止資源耗盡攻擊（429） |
+| 應用層 | CORS 限制 + OPTIONS 預檢 | 防止跨站偽造請求 |
+| 資料層 | IAM Least Privilege | 最小化資料洩漏爆炸半徑 |
+| 金鑰層 | GitHub Secrets + jq 序列化 | 防止 DATABASE_URL 被 shell 截斷或洩漏 |
+| 財務層 | AWS Budgets $0.01 警報 | 異常帳單即時通知 |
