@@ -35,20 +35,21 @@ AWS DynamoDB（訪客計數）
 ## AWS 服務說明
 
 | 服務 | 用途 |
-|------|------|
+| :--- | :--- |
 | **S3** | 靜態網站檔案託管 |
-| **Route 53** | 域名管理（saibusu.com） |
-| **Cloudflare** | CDN、DNS、DDoS 防護 |
+| **Route 53** | 域名註冊（選用：目前由 Cloudflare DNS 代管，優化成本結構） |
+| **Cloudflare** | CDN、DNS、DDoS 防護（WAF / Bot Fight Mode） |
 | **ACM** | SSL/TLS 憑證 |
-| **API Gateway** | REST API 端點 |
-| **Lambda** | 無伺服器訪客計數後端 |
+| **API Gateway** | HTTP API 端點與流量限流（Throttling） |
+| **Lambda** | 無伺服器訪客計數後端（Python 3.12） |
 | **DynamoDB** | 持久化訪客計數（原子操作） |
 
 ## 安全設計
 
-- S3 Bucket Policy 限制僅 Cloudflare 的 IP 段可存取，阻擋直接存取 S3 URL
-- Lambda CORS 設定僅允許 `https://saibusu.com` 跨域請求
-- DynamoDB 使用原子操作（`ADD`）防止 Race Condition
+- **API Gateway Throttling**：設定速率限制（Rate: 2）與高載限制（Burst: 5），從基礎設施層級防止 Lambda 與 DynamoDB 被惡意刷量攻擊，確保預算安全。
+- **S3 Bucket Policy**：限制僅 Cloudflare 的 IP 段可存取，阻擋直接存取 S3 URL。
+- **Lambda CORS**：設定僅允許 `https://saibusu.com` 跨域請求。
+- **DynamoDB 原子操作**：使用 `ADD` 操作防止 Race Condition。
 
 ### Origin Cloaking（來源遮蔽）
 
@@ -73,11 +74,12 @@ S3 Bucket Policy 比對來源 IP
 在 CDN 層級，我實作了 Cloudflare WAF 自訂規則與 Bot Fight Mode，有效降低了 70% 以上的自動化掃描流量。透過定期分析 Security Events 日誌，我能主動監控並應對針對性攻擊，確保後端 Serverless 架構的穩定與成本安全。
 
 | 防護機制 | 效果 |
-|----------|------|
-| WAF 自訂規則 | 攔截惡意請求模式與異常 User-Agent |
-| Bot Fight Mode | 自動化掃描流量降低 70%+ |
-| Security Events 日誌 | 主動監控，快速識別針對性攻擊 |
-| 成本安全 | 阻擋惡意流量，防止 Lambda / DynamoDB 被刷量計費 |
+| :--- | :--- |
+| **WAF 自訂規則** | 攔截惡意請求模式與異常 User-Agent |
+| **Bot Fight Mode** | 自動化掃描流量降低 70%+ |
+| **API Throttling** | 設定 Rate: 2 / Burst: 5，阻斷 API 暴力請求，防止後端成本失控 |
+| **Security Events 日誌** | 主動監控，快速識別針對性攻擊 |
+| **成本安全** | 透過限流與機器人過濾，確保 AWS 帳單維持在免費額度內 |
 
 ## 部署步驟
 
@@ -88,3 +90,5 @@ S3 Bucket Policy 比對來源 IP
 5. 套用 `infrastructure/iam-lambda-policy.json` 至 Lambda 執行角色
 6. 在 API Gateway 建立 GET route 並整合 Lambda
 7. 更新 `iam-lambda-policy.json` 中的 `YOUR_REGION` 與 `YOUR_ACCOUNT_ID`
+8. **基礎設施保護**：在 API Gateway **Protect → Throttling** 設定速率限制（Rate: 2, Burst: 5）
+9. **財務防禦**：建立 **AWS Budgets** 預算警報（設定為 $0.01 USD），確保帳單異常時能立即收到通知
