@@ -47,28 +47,34 @@ jobs:
         run: |
           cp backend/index.mjs ./index.mjs
           
-          # --- 瘦身關鍵：刪除不必要的 Prisma 引擎 ---
-          # 只保留 linux-library-config (Lambda 運作所需)，刪除其他平台的引擎
-          find node_modules/.prisma/client -name "*.node" -not -name "*linux-arm64*" -delete 2>/dev/null || true
+          # 1. 進入 node_modules 徹底清理
+          # 只保留 linux-arm64-openssl-3.0.x (對應你的 Lambda 設定)
+          # 刪除所有其他的引擎檔案 (.node)
+          find node_modules/.prisma/client -name "*.node" -not -name "*linux-arm64*" -delete
           
-          # 刪除 Prisma 緩存與說明文件
+          # 2. 刪除 Prisma 原始引擎套件（生成後就不需要了，體積很大）
           rm -rf node_modules/@prisma/engines
+          rm -rf node_modules/prisma
+          rm -rf node_modules/@prisma/config
+          
+          # 3. 刪除其他快取
           rm -rf node_modules/.cache
           
-          # 打包
+          # 4. 打包
           zip -r function.zip index.mjs node_modules prisma
 
       # --- 6. 部署到 AWS Lambda ---
       - name: Deploy to AWS Lambda
         run: |
-          # 1. 先把包傳到你的 S3 儲存桶 (建議建立一個專用資料夾)
           aws s3 cp function.zip s3://saibusu.com/deploy/function.zip
-          
-          # 2. 叫 Lambda 從 S3 更新程式碼
           aws lambda update-function-code \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --s3-bucket saibusu.com \
             --s3-key deploy/function.zip
+          
+          # 軒杰，加入這個延遲可以避免 AWS 資源衝突錯誤
+          echo "等待 Lambda 更新完成..."
+          sleep 10
 
       # --- 6.5 更新 Lambda 環境變數（注入 NeonDB 連線字串）---
       - name: Update Lambda environment variables
