@@ -50,6 +50,24 @@ AWS DynamoDB（訪客計數）
 - Lambda CORS 設定僅允許 `https://saibusu.com` 跨域請求
 - DynamoDB 使用原子操作（`ADD`）防止 Race Condition
 
+### Origin Cloaking（來源遮蔽）
+
+我透過 Cloudflare 實作了 Origin Cloaking（來源遮蔽）。除了設定橘色雲朵隱藏後端節點，我更在 AWS S3 套用了僅允許 Cloudflare IP 區段的 Bucket Policy，確保所有流量都必須經過 Cloudflare WAF 過濾，徹底杜絕了繞過 CDN 攻擊原始伺服器的可能性。
+
+```
+攻擊者直接請求 S3 URL
+    ↓
+S3 Bucket Policy 比對來源 IP
+    ↓ 非 Cloudflare IP → 403 Forbidden
+    ↓ Cloudflare IP   → 正常回應
+```
+
+| 防護層 | 實作方式 |
+|--------|---------|
+| DNS 遮蔽 | Cloudflare Proxy（橘色雲朵），隱藏真實 S3 endpoint |
+| IP 白名單 | S3 Bucket Policy 僅允許 15 個 Cloudflare IP 區段 |
+| WAF 過濾 | 所有請求強制經過 Cloudflare WAF 才能到達 S3 |
+
 ## 部署步驟
 
 1. 將 `frontend/` 內容上傳至 S3 Bucket
