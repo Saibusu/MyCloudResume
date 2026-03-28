@@ -32,7 +32,10 @@ jobs:
          #cache: 'yarn'
 
       - name: Install dependencies
-        run: yarn install
+        run: 
+          # 先清理舊的 client，確保 WASM 檔案能重新生成
+          rm -rf node_modules/.prisma
+          npx prisma generate
 
       # --- 4. Prisma Client 產生 ---
       - name: Generate Prisma Client
