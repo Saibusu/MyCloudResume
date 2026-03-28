@@ -4,6 +4,8 @@ import { PrismaClient } from '@prisma/client'
 let prisma;
 
 export const handler = async (event) => {
+  console.log("DEBUG - DATABASE_URL exists:", !!process.env.DATABASE_URL);
+  console.log("DEBUG - DATABASE_URL length:", process.env.DATABASE_URL?.length || 0);
   // --- 優先處理預檢請求，不觸發資料庫連線 ---
   if (event.requestContext?.http?.method === 'OPTIONS' || event.httpMethod === 'OPTIONS') {
     return {
@@ -20,19 +22,23 @@ export const handler = async (event) => {
   try {
     // 只有在真正需要時才初始化 Prisma
     if (!prisma) {
-        prisma = new PrismaClient();
+        // 強制從環境變數讀取
+        prisma = new PrismaClient({
+          datasourceUrl: process.env.DATABASE_URL 
+        });
       }
   
+      // ─── 軒杰，這幾行一定要加進去，否則 count 會是空的 ───
       const updatedVisitor = await prisma.visitor.update({
         where: { id: 1 },
         data: { count: { increment: 1 } },
       });
-
-    return {
-      statusCode: 200,
-      headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-      body: JSON.stringify({ count: updatedVisitor.count }),
-    };
+  
+      return {
+        statusCode: 200,
+        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        body: JSON.stringify({ count: updatedVisitor.count }),
+      };
   } catch (error) {
     console.error('DATABASE_CONNECT_FAIL:', error.message);
     return {
