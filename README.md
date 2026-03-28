@@ -2,6 +2,15 @@
 
 個人履歷靜態網站，部署於 AWS，整合 Lambda 訪客計數器。
 
+## 專案亮點
+
+**技術棧：AWS (S3, Lambda, API Gateway, DynamoDB), Cloudflare WAF, Python**
+
+- **深層防禦實作 (Defense in Depth)**：建構多層防禦體系，包含 Cloudflare WAF 規則攔截惡意掃描、S3 Bucket Policy 實施來源 IP 白名單（Origin Cloaking），以及 API Gateway 限流（Throttling）防止資源耗盡攻擊。
+- **無伺服器架構優化**：利用 Lambda 搭配 DynamoDB 原子操作（Atomic Counter）開發高性能訪客計數器，有效避免併發請求下的 Race Condition 問題。
+- **成本與效能管理**：透過 Cloudflare CDN 快取與 DNS 優化（移除冗餘 Route 53 託管），並開啟 Bot Fight Mode 降低 70% 以上無效流量，將維運成本降至近乎零支出。
+- **最小權限原則 (Least Privilege)**：精確配置 IAM 執行角色政策，確保雲端資源間的授權僅限於必要操作，符合業界資安合規標準。
+
 ## 架構
 
 ```
