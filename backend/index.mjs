@@ -23,14 +23,16 @@ export const handler = async (event) => {
     console.log("DEBUG - Available Env Keys:", Object.keys(process.env).filter(k => k.includes('DATABASE')));
 
     if (!prisma) {
-      // 軒杰，這行是關鍵：從環境變數抓取值
-      const connString = process.env.DATABASE_URL || process.env.database_url; 
-      
-      // 改用 Prisma 7 認可的 datasourceUrl 屬性
-      prisma = new PrismaClient({
-        datasourceUrl: connString
-      });
-    }
+        const connString = process.env.DATABASE_URL;
+        
+        prisma = new PrismaClient({
+          datasources: {
+            db: {
+              url: connString
+            }
+          }
+        });
+      }
   
     // 執行更新
     const updatedVisitor = await prisma.visitor.update({
