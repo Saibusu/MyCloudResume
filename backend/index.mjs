@@ -20,8 +20,14 @@ export const handler = async (event) => {
   try {
     // 只有在真正需要時才初始化 Prisma
     if (!prisma) {
-      prisma = new PrismaClient();
-    }
+        prisma = new PrismaClient({
+          datasources: {
+            db: {
+              url: process.env.DATABASE_URL,
+            },
+          },
+        });
+      }
 
     const updatedVisitor = await prisma.visitor.update({
       where: { id: 1 },
