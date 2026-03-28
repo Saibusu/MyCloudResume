@@ -353,6 +353,33 @@
     .badge.gold .dot { background: #e67e22; }
     .badge.cert .dot { background: #27ae60; }
 
+    /* 專題標題列 */
+    .project-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .project-link {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--primary);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      padding: 3px 10px;
+      border-radius: 20px;
+      transition: background 0.2s, color 0.2s;
+      white-space: nowrap;
+    }
+
+    .project-link:hover {
+      background: var(--primary);
+      color: #fff;
+    }
+
     /* API 狀態盒 */
     .api-status-box {
       border: 2px solid var(--border);
@@ -486,12 +513,10 @@
         ⏳ 正在連接後端服務...
       </div>
 
-      <!-- 專題 -->
+      <!-- Side Project -->
       <section>
-        <div class="main-section-title">專題</div>
-
-        <!-- 雲端資安專題 -->
-        <div class="project-card" style="margin-bottom: 14px;">
+        <div class="main-section-title">Side Project</div>
+        <div class="project-card">
           <h3>雲端資安 Serverless 履歷系統</h3>
           <div class="meta">2025 ・ 個人專案</div>
           <span class="role-badge">AWS S3 ・ Lambda ・ API Gateway ・ DynamoDB ・ Cloudflare WAF</span>
@@ -502,10 +527,16 @@
             <li><span class="num">4</span>最小權限原則（Least Privilege）IAM 角色精確授權</li>
           </ul>
         </div>
+      </section>
 
-        <!-- 密碼學專題 -->
+      <!-- 大學專題 -->
+      <section>
+        <div class="main-section-title">大學專題</div>
         <div class="project-card">
-          <h3>《遊戲化闖關學習系統：以密碼學為例》</h3>
+          <div class="project-header">
+            <h3>《遊戲化闖關學習系統：以密碼學為例》</h3>
+            <a href="https://crypto.ttu.taipei" target="_blank" class="project-link">crypto.ttu.taipei ↗</a>
+          </div>
           <div class="meta">2024.10 ～ 2025.11</div>
           <span class="role-badge">專題領導者 ／ 系統架構與後端開發主要負責人</span>
           <p>目標：密碼學原理與系統密務的線上學習與挑戰平台</p>
@@ -593,15 +624,14 @@
     </main>
   </div>
 
-  <!-- 後端串接測試 -->
-  <div class="api-test-bar">
-    <h3>後端串接測試</h3>
-    <button onclick="fetchMessage()">從 Lambda 取得訊息</button>
-    <p id="lambda-text"></p>
+  <!-- 訪客計數列 -->
+  <div class="visitor-bar">
+    <span class="visitor-icon">👁</span>
+    <p id="lambda-text">⏳ 載入訪客數...</p>
   </div>
 
   <style>
-    .api-test-bar {
+    .visitor-bar {
       position: fixed;
       bottom: 0;
       left: 0;
@@ -609,91 +639,53 @@
       background: #1a2332;
       color: #fff;
       text-align: center;
-      padding: 14px 20px;
+      padding: 12px 20px;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 20px;
+      gap: 10px;
       box-shadow: 0 -4px 20px rgba(0,0,0,0.3);
       z-index: 999;
     }
 
-    .api-test-bar h3 {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: #a8c8e8;
-      white-space: nowrap;
-    }
-
-    .api-test-bar button {
-      padding: 8px 18px;
-      background: #2c6fad;
-      color: #fff;
-      border: none;
-      border-radius: 20px;
-      font-size: 0.88rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-      white-space: nowrap;
-    }
-
-    .api-test-bar button:hover {
-      background: #1a5276;
-    }
-
-    .api-test-bar button:active {
-      transform: scale(0.97);
+    .visitor-icon {
+      font-size: 1.1rem;
     }
 
     #lambda-text {
-      font-size: 0.9rem;
+      font-size: 0.92rem;
       font-weight: 700;
       color: #5dade2;
-      min-width: 200px;
-      text-align: left;
+      margin: 0;
     }
   </style>
 
   <script>
     window.onload = async function() {
       const statusBox = document.getElementById('api-status');
+      const visitorText = document.getElementById('lambda-text');
       const API_URL = 'https://3ai7u70ypd.execute-api.us-east-1.amazonaws.com/';
 
       try {
         const response = await fetch(API_URL);
         const data = await response.json();
+
         statusBox.innerHTML = `✅ 系統狀態：${data.message} <br><small style="font-weight:400;">由 AWS Lambda + API Gateway 提供動態支援</small>`;
         statusBox.style.borderColor = '#27ae60';
         statusBox.style.color = '#27ae60';
+
+        visitorText.style.color = '#5dade2';
+        visitorText.innerText = data.message;
       } catch (error) {
         statusBox.innerHTML = '❌ 無法連接至後端服務，請檢查 CORS 設定。';
         statusBox.style.borderColor = '#e74c3c';
         statusBox.style.color = '#e74c3c';
+
+        visitorText.style.color = '#e74c3c';
+        visitorText.innerText = '無法取得訪客數';
         console.error('API Error:', error);
       }
     };
-  </script>
-
-  <script>
-    async function fetchMessage() {
-      const statusEl = document.getElementById('lambda-text');
-      statusEl.style.color = '#a8c8e8';
-      statusEl.innerText = '連線中...';
-
-      const apiUrl = 'https://3ai7u70ypd.execute-api.us-east-1.amazonaws.com/';
-
-      try {
-        const response = await fetch(apiUrl);
-        const data = await response.json();
-        statusEl.style.color = '#5dade2';
-        statusEl.innerText = data.message;
-      } catch (error) {
-        statusEl.style.color = '#e74c3c';
-        statusEl.innerText = '出錯了，請檢查 CORS 設定或 API 網址！';
-        console.error('Error:', error);
-      }
-    }
   </script>
 
 </body>
