@@ -380,18 +380,6 @@
       color: #fff;
     }
 
-    /* API 狀態盒 */
-    .api-status-box {
-      border: 2px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 18px;
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: var(--text-light);
-      background: var(--card-bg);
-      transition: border-color 0.4s, color 0.4s;
-      line-height: 1.6;
-    }
 
     /* RWD */
     @media (max-width: 700px) {
@@ -507,11 +495,6 @@
 
     <!-- ───── 右側主內容 ───── -->
     <main class="main">
-
-      <!-- 系統狀態 -->
-      <div id="api-status" class="api-status-box">
-        ⏳ 正在連接後端服務...
-      </div>
 
       <!-- Side Project -->
       <section>
@@ -662,7 +645,6 @@
 
   <script>
     window.onload = async function() {
-      const statusBox = document.getElementById('api-status');
       const visitorText = document.getElementById('lambda-text');
       const API_URL = 'https://3ai7u70ypd.execute-api.us-east-1.amazonaws.com/';
 
@@ -670,17 +652,9 @@
         const response = await fetch(API_URL);
         const data = await response.json();
 
-        statusBox.innerHTML = `✅ 系統狀態：${data.message} <br><small style="font-weight:400;">由 AWS Lambda + API Gateway 提供動態支援</small>`;
-        statusBox.style.borderColor = '#27ae60';
-        statusBox.style.color = '#27ae60';
-
         visitorText.style.color = '#5dade2';
-        visitorText.innerText = data.message;
+        visitorText.innerText = `你是第 ${data.count} 位訪客`;
       } catch (error) {
-        statusBox.innerHTML = '❌ 無法連接至後端服務，請檢查 CORS 設定。';
-        statusBox.style.borderColor = '#e74c3c';
-        statusBox.style.color = '#e74c3c';
-
         visitorText.style.color = '#e74c3c';
         visitorText.innerText = '無法取得訪客數';
         console.error('API Error:', error);
