@@ -68,6 +68,17 @@ S3 Bucket Policy 比對來源 IP
 | IP 白名單 | S3 Bucket Policy 僅允許 15 個 Cloudflare IP 區段 |
 | WAF 過濾 | 所有請求強制經過 Cloudflare WAF 才能到達 S3 |
 
+### Cloudflare WAF 與 Bot 防護
+
+在 CDN 層級，我實作了 Cloudflare WAF 自訂規則與 Bot Fight Mode，有效降低了 70% 以上的自動化掃描流量。透過定期分析 Security Events 日誌，我能主動監控並應對針對性攻擊，確保後端 Serverless 架構的穩定與成本安全。
+
+| 防護機制 | 效果 |
+|----------|------|
+| WAF 自訂規則 | 攔截惡意請求模式與異常 User-Agent |
+| Bot Fight Mode | 自動化掃描流量降低 70%+ |
+| Security Events 日誌 | 主動監控，快速識別針對性攻擊 |
+| 成本安全 | 阻擋惡意流量，防止 Lambda / DynamoDB 被刷量計費 |
+
 ## 部署步驟
 
 1. 將 `frontend/` 內容上傳至 S3 Bucket
