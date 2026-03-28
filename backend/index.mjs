@@ -20,15 +20,13 @@ export const handler = async (event) => {
   }
 
   try {
-    // 只有在真正需要時才初始化 Prisma
+    // 軒杰，既然變數確定存在，我們直接用空括號
+    // 這樣不論它是 Prisma 5, 6 還是 7，都能正確自動抓取環境變數
     if (!prisma) {
-        // 強制從環境變數讀取
-        prisma = new PrismaClient({
-          datasourceUrl: process.env.DATABASE_URL 
-        });
+        prisma = new PrismaClient();
       }
   
-      // ─── 軒杰，這幾行一定要加進去，否則 count 會是空的 ───
+      // 補上更新邏輯
       const updatedVisitor = await prisma.visitor.update({
         where: { id: 1 },
         data: { count: { increment: 1 } },
