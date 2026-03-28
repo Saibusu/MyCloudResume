@@ -74,11 +74,16 @@ jobs:
           sleep 10
 
       # --- 6.5 更新 Lambda 環境變數（注入 NeonDB 連線字串）---
+      # 使用 jq 寫入 JSON 檔案，避免 & ? = 等特殊字元被 shell 截斷
       - name: Update Lambda environment variables
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
+          jq -n --arg url "$DATABASE_URL" \
+            '{"Variables":{"DATABASE_URL":$url}}' > /tmp/lambda-env.json
           aws lambda update-function-configuration \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --environment "Variables={DATABASE_URL=${{ secrets.DATABASE_URL }}}"
+            --environment file:///tmp/lambda-env.json
 
       # --- 7. 清除 Cloudflare 快取 (選用，若你有設定) ---
       - name: Purge Cloudflare cache
