@@ -645,22 +645,23 @@
   </style>
 
   <script>
-    window.onload = async function() {
-      const visitorText = document.getElementById('lambda-text');
-      const API_URL = 'https://3ai7u70ypd.execute-api.us-east-1.amazonaws.com/';
+    const API_URL = 'https://3ai7u70ypd.execute-api.us-east-1.amazonaws.com/prod/visitor';
 
+    async function updateCounter() {
       try {
-        const response = await fetch(API_URL);
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
         const data = await response.json();
-
-        visitorText.style.color = '#5dade2';
-        visitorText.innerText = `你是第 ${data.count} 位訪客`;
-      } catch (error) {
-        visitorText.style.color = '#e74c3c';
-        visitorText.innerText = '無法取得訪客數';
-        console.error('API Error:', error);
+        document.getElementById('lambda-text').innerText = `第 ${data.count} 位到訪的資安專家`;
+      } catch (err) {
+        console.error('計數器抓取失敗:', err);
+        document.getElementById('lambda-text').innerText = '訪客計數器暫時離線';
       }
-    };
+    }
+
+    window.onload = updateCounter;
   </script>
 
 </body>
