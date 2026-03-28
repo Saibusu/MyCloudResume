@@ -1,3 +1,6 @@
+# 依賴套件（不上傳）
+node_modules/
+
 # AWS 金鑰與憑證（絕對不能上傳）
 *.csv
 *accessKeys*
@@ -6,3 +9,9 @@
 *.key
 .env
 .env.*
+
+# Prisma 產生檔
+/generated/prisma
+
+# 打包產出
+function.zip

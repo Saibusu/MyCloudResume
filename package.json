@@ -1,0 +1,31 @@
+{
+  "name": "learn",
+  "version": "1.0.0",
+  "description": "個人履歷靜態網站，部署於 AWS，整合 Lambda 訪客計數器。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Saibusu/MyCloudResume.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Saibusu/MyCloudResume/issues"
+  },
+  "homepage": "https://github.com/Saibusu/MyCloudResume#readme",
+  "dependencies": {
+    "@prisma/client": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "prisma": "^7.6.0"
+  }
+}

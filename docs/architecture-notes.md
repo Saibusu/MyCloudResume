@@ -197,3 +197,125 @@ AWS DynamoDB（Atomic Counter：ResumeVisitorCount）
 | 應用層 | CORS 限制 | 防止跨站偽造請求 |
 | 資料層 | IAM Least Privilege | 最小化資料洩漏爆炸半徑 |
 | 財務層 | AWS Budgets $0.01 警報 | 異常帳單即時通知 |
+
+---
+
+## 技術概念深度補充
+
+### 核心運算與內容傳遞：EC2、CDN 與 Lambda
+
+#### 1. EC2（Elastic Compute Cloud）
+
+EC2 是 AWS 提供的虛擬機服務，屬於 **IaaS（Infrastructure as a Service）**。它讓你擁有完整的作業系統控制權，可自定義 CPU、記憶體，並在上面執行任何軟體（如 Nginx、Docker）。
+
+**與本專案的比較：**
+
+| 項目 | EC2 | Lambda（本專案採用）|
+|------|-----|------------------|
+| 服務模型 | IaaS（管理作業系統） | FaaS（只管程式碼） |
+| 計費方式 | 24 小時開機費用 | 按執行次數計費 |
+| 適用場景 | 長時間運行、複雜環境配置 | 流量不固定、邏輯簡單 |
+| 維護成本 | 高（需更新 OS、安全補丁） | 極低（AWS 全權管理） |
+
+雖然本專案最終選擇 S3 + Lambda 的 Serverless 架構，但在需要長時間運行或特定環境配置的應用（例如 Django 後端、容器化服務）時，EC2 仍是首選。
+
+---
+
+#### 2. CDN（Content Delivery Network）— Cloudflare
+
+CDN 的核心目標是「**物理加速**」。它在全球佈署數百個邊緣節點（Edge Nodes）。
+
+```
+台灣訪客請求 saibusu.com
+    ↓
+連到距離最近的 Cloudflare 台北節點（< 10ms）
+    ↓（快取命中）→ 直接回應，不經 AWS
+    ↓（快取失效）→ 向美國 S3 抓取新版本
+```
+
+CDN 不僅加速，還具備「緩衝」作用。它會快取靜態網頁（HTML/CSS）。當更新網頁並執行 GitHub Actions 時，腳本會觸發 **Purge Cache**，強迫 CDN 丟棄舊版並向 S3 抓取新版，確保訪客永遠看到最新內容。
+
+---
+
+### 安全防護層：WAF 與 Managed Challenge
+
+#### 3. WAF（Web Application Firewall）
+
+WAF 運作在 **OSI 七層模型的第七層（應用層）**。它不像傳統防火牆只看 IP 與 Port，WAF 會深度檢查請求內容：
+
+| 攻擊類型 | WAF 的處理方式 |
+|---------|--------------|
+| SQL Injection | 偵測 SQL 關鍵字（如 `DROP TABLE`）並封鎖 |
+| XSS（跨站腳本） | 偵測惡意 `<script>` 注入 |
+| 惡意機器人 | 根據 User-Agent 特徵識別並攔截 |
+| 無瀏覽器特徵的腳本 | 攔截沒有正常瀏覽器標頭的 Python/curl 請求 |
+
+在本專案中，Cloudflare 自訂 WAF 規則能根據請求的 Header 判斷是否為惡意機器人，例如直接擋掉沒有瀏覽器特徵（User-Agent）的自動化腳本。
+
+---
+
+#### 4. Managed Challenge（受管理挑戰）
+
+這是一種「**非對稱**」的防禦手段。當 WAF 懷疑某個請求有問題時，不直接封鎖，而是發起「挑戰」：
+
+```
+可疑請求抵達 Cloudflare
+    ↓
+Cloudflare 發送 JavaScript 挑戰
+    ↓ 人類瀏覽器 → 自動執行（通常無感，< 1 秒）→ 放行
+    ↓ 攻擊腳本   → 無法執行 JS / 通過圖示驗證 → 封鎖
+```
+
+**為什麼這是「非對稱」的？**
+攻擊者需要花大量資源（真實瀏覽器環境、驗證碼識別 AI）才能繞過，而正常用戶幾乎零成本通過。這種設計讓「攻擊成本遠高於防禦成本」，能有效過濾 70%+ 的自動化背景雜訊。
+
+---
+
+### 流量與溝通控管：Throttling 與 CORS
+
+#### 5. Throttling（節流）
+
+這是在 API Gateway 層級實作的「資源配給」制度：
+
+```
+Rate: 2  → 每秒穩定處理 2 個請求
+Burst: 5 → 允許瞬間最多 5 個請求的突發峰值
+超過上限  → 回傳 429 Too Many Requests
+```
+
+**為什麼這對錢包很重要？**
+
+Lambda 是按量計費。若沒有 Throttling，攻擊者只需一個 `while True: requests.get(api_url)` 腳本就能在幾分鐘內耗盡免費額度，產生意外帳單。Throttling 在 API Gateway 層直接截斷，Lambda 甚至不會被啟動，實現了**在付費資源前的最後一道防線**。
+
+| 攻擊情境 | 無 Throttling | 有 Throttling |
+|---------|-------------|--------------|
+| 每秒 100 次請求 | Lambda 被呼叫 100 次，產生費用 | 第 3 次起回傳 429，Lambda 僅執行 2 次 |
+| 財務風險 | 高 | 極低 |
+
+---
+
+#### 6. CORS（Cross-Origin Resource Sharing）
+
+CORS 是**瀏覽器的安全機制**。預設情況下，網頁上的 JS 不允許跨網域存取 API。
+
+```
+saibusu.com 的 JS 呼叫 execute-api.us-east-1.amazonaws.com
+    ↓
+瀏覽器先發送 OPTIONS 預檢請求（Preflight）
+    ↓ API Gateway 回傳 Access-Control-Allow-Origin: https://saibusu.com
+    ↓ 來源符合 → 允許正式請求
+    ↓ 來源不符 → 瀏覽器直接封鎖，不發送正式請求
+```
+
+**為什麼需要限制來源？**
+
+若沒有正確設定 CORS 限制，任何第三方網站都可以寫一段 JS 呼叫你的 API：
+
+```javascript
+// 惡意網站 evil.com 的腳本（若無 CORS 限制）
+fetch('https://你的API.execute-api.amazonaws.com/')
+  .then(r => r.json())
+  .then(data => console.log(data)); // 成功讀取你的計數器
+```
+
+透過將 `Access-Control-Allow-Origin` 鎖定為 `https://saibusu.com`，任何其他網域的請求都會被瀏覽器在本地端直接阻擋，達到**防止 API 盜用與流量消耗**的效果。
