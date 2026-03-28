@@ -1,0 +1,8 @@
+# AWS 金鑰與憑證（絕對不能上傳）
+*.csv
+*accessKeys*
+*credentials*
+*.pem
+*.key
+.env
+.env.*
