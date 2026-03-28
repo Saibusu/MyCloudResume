@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # --- 1. AWS 憑證配置 ---
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -26,17 +26,17 @@ jobs:
 
       # --- 3. 後端環境準備 (Node.js & Yarn) ---
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'yarn'
+         #cache: 'yarn'
 
       - name: Install dependencies
         run: yarn install
 
       # --- 4. Prisma Client 產生 ---
       - name: Generate Prisma Client
-        run: npx prisma generate
+        run: yarn prisma generate
 
       # --- 5. 打包 Lambda (含 Prisma 與 Node 模組) ---
       - name: Zip Lambda function
