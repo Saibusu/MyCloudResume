@@ -32,12 +32,12 @@ jobs:
          #cache: 'yarn'
 
       - name: Install dependencies
-        run: 
+        run: |
           yarn install  # 必須先安裝，才會產生 node_modules
 
       # --- 4. Prisma Client 產生 ---
       - name: Generate Prisma Client
-        run: 
+        run: |
           # 確保清理並使用專案內的 yarn 執行，避免 npx 模組遺失問題
           rm -rf node_modules/.prisma
           yarn prisma generate
@@ -45,8 +45,17 @@ jobs:
       # --- 5. 打包 Lambda (含 Prisma 與 Node 模組) ---
       - name: Zip Lambda function
         run: |
-          ls -R backend/  # 噴出路徑日誌，幫助我們 Debug
           cp backend/index.mjs ./index.mjs
+          
+          # --- 瘦身關鍵：刪除不必要的 Prisma 引擎 ---
+          # 只保留 linux-library-config (Lambda 運作所需)，刪除其他平台的引擎
+          find node_modules/.prisma/client -name "*.node" -not -name "*linux-arm64*" -delete 2>/dev/null || true
+          
+          # 刪除 Prisma 緩存與說明文件
+          rm -rf node_modules/@prisma/engines
+          rm -rf node_modules/.cache
+          
+          # 打包
           zip -r function.zip index.mjs node_modules prisma
 
       # --- 6. 部署到 AWS Lambda ---
