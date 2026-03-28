@@ -33,13 +33,14 @@ jobs:
 
       - name: Install dependencies
         run: 
-          # 先清理舊的 client，確保 WASM 檔案能重新生成
-          rm -rf node_modules/.prisma
-          yarn prisma generate
+          yarn install  # 必須先安裝，才會產生 node_modules
 
       # --- 4. Prisma Client 產生 ---
       - name: Generate Prisma Client
-        run: npx prisma generate
+        run: 
+          # 確保清理並使用專案內的 yarn 執行，避免 npx 模組遺失問題
+          rm -rf node_modules/.prisma
+          yarn prisma generate
 
       # --- 5. 打包 Lambda (含 Prisma 與 Node 模組) ---
       - name: Zip Lambda function
