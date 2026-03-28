@@ -19,8 +19,11 @@ export const handler = async (event) => {
   }
 
   try {
-    // Prisma 7：直接使用 new PrismaClient()
-    // URL 由 schema.prisma 的 url = env("DATABASE_URL") + Lambda 環境變數提供
+    const dbUrl = process.env.DATABASE_URL || '';
+    console.log('DB_URL_LENGTH:', dbUrl.length);
+    console.log('DB_URL_START:', dbUrl.substring(0, 30));
+    console.log('DB_URL_END:', dbUrl.substring(dbUrl.length - 30));
+
     if (!prisma) {
       prisma = new PrismaClient();
     }

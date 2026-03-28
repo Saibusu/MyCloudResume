@@ -70,8 +70,9 @@ jobs:
             --s3-key deploy/function.zip
           
           # 軒杰，加入這個延遲可以避免 AWS 資源衝突錯誤
-          echo "等待 Lambda 更新完成..."
-          sleep 10
+          echo "等待 Lambda 代碼部署完成..."
+          aws lambda wait function-updated \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }}
 
       # --- 6.5 更新 Lambda 環境變數（注入 NeonDB 連線字串）---
       # 使用 jq 寫入 JSON 檔案，避免 & ? = 等特殊字元被 shell 截斷
