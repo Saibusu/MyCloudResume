@@ -20,17 +20,23 @@ export const handler = async (event) => {
   }
 
   try {
-    // 軒杰，既然變數確定存在，我們直接用空括號
-    // 這樣不論它是 Prisma 5, 6 還是 7，都能正確自動抓取環境變數
+    console.log("DEBUG - Available Env Keys:", Object.keys(process.env).filter(k => k.includes('DATABASE')));
+
     if (!prisma) {
-        prisma = new PrismaClient();
-      }
-  
-      // 補上更新邏輯
-      const updatedVisitor = await prisma.visitor.update({
-        where: { id: 1 },
-        data: { count: { increment: 1 } },
+      // 軒杰，這行是關鍵：從環境變數抓取值
+      const connString = process.env.DATABASE_URL || process.env.database_url; 
+      
+      // 改用 Prisma 7 認可的 datasourceUrl 屬性
+      prisma = new PrismaClient({
+        datasourceUrl: connString
       });
+    }
+  
+    // 執行更新
+    const updatedVisitor = await prisma.visitor.update({
+      where: { id: 1 },
+      data: { count: { increment: 1 } },
+    });
   
       return {
         statusCode: 200,
