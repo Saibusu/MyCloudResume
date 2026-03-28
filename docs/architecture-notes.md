@@ -21,6 +21,10 @@
 9. [除錯記錄：CI/CD 層 — 10 次 Actions 紅燈](#cicd-層github-actions-工作流程失敗記錄10-次紅燈)
 10. [除錯記錄：Runtime 層 — Actions 通過但訪客計數器仍失敗](#runtime-層actions-通過但訪客計數器仍失敗)
 
+**本機開發環境**
+
+11. [本機環境建置與 Prisma 7 本地探索記錄](#本機開發環境建置與-prisma-7-本地探索記錄)
+
 ---
 
 ## 步驟一：Amazon S3 靜態網站託管與來源遮蔽（Origin Cloaking）
@@ -839,3 +843,260 @@ NeonDB（Serverless PostgreSQL：Visitor table）
 | 資料層 | IAM Least Privilege | 最小化資料洩漏爆炸半徑 |
 | 金鑰層 | GitHub Secrets + jq 序列化 | 防止 DATABASE_URL 被 shell 截斷或洩漏 |
 | 財務層 | AWS Budgets $0.01 警報 | 異常帳單即時通知 |
+
+---
+
+# 本機開發環境建置與 Prisma 7 本地探索記錄
+
+> 本章記錄本機 Windows 開發環境的建置過程，以及在本地嘗試使用 Prisma 7 時所遭遇的一系列錯誤與解決方法。
+
+---
+
+## 環境建置
+
+### yarn 安裝
+
+原本嘗試使用 `npx` 執行 Prisma 相關指令，但在 Windows 環境下持續出現 `command not found` 或無法正確解析路徑的問題。
+
+**根本原因：** Windows 的 PATH 環境變數設定、PowerShell 執行政策，以及 `npx` 依賴 npm 全域快取的方式，在某些 Windows 環境配置下會造成指令無法正確找到可執行檔。
+
+**解決方案：** 從 [yarnpkg.com](https://yarnpkg.com) 下載 `.msi` 安裝檔直接安裝，確保 yarn 被正確加入 PATH：
+
+```
+yarn --version
+→ 1.22.22
+```
+
+`yarn` 相比 `npx` 的優點：
+- 所有指令透過 `yarn prisma ...` 執行，確保使用的是**專案本地**安裝的版本而非全域版本
+- lockfile（`yarn.lock`）鎖定依賴樹，避免版本漂移
+- 在 CI/CD 環境（GitHub Actions）中行為一致可預期
+
+---
+
+## Prisma 7 本地探索過程
+
+### 步驟與錯誤時間軸
+
+#### 步驟 1：安裝 Prisma CLI
+
+```bash
+yarn add prisma --dev
+```
+
+成功安裝 `prisma@7.6.0`（85 個依賴），但此時尚未安裝 `@prisma/client`。
+
+---
+
+#### 步驟 2：初始化 Prisma
+
+```bash
+yarn prisma init
+```
+
+Prisma 7 的 `init` 會自動產生三個檔案：
+
+| 檔案 | 用途 |
+| :--- | :--- |
+| `prisma/schema.prisma` | 資料模型定義 |
+| `prisma.config.ts` | Prisma 7 新增：CLI 工具的連線設定（migrate / studio 用） |
+| `.env` | 環境變數範本 |
+
+> **與 Prisma 6 的差異：** Prisma 6 只產生 `schema.prisma` 和 `.env`；Prisma 7 額外產生 `prisma.config.ts`，這是 Prisma 7 架構重大變化的體現。
+
+---
+
+#### 步驟 3：`yarn prisma db push` 失敗（兩次）
+
+**錯誤訊息：**
+```
+Error: Prisma schema validation - (get-config wasm)
+Error code: P1012
+error: The datasource property `url` is no longer supported in schema files.
+Move connection URLs for Migrate to `prisma.config.ts`
+--> prisma\schema.prisma:8
+  7 | provider = "postgresql"
+  8 | url      = env("DATABASE_URL")
+Prisma CLI Version : 7.6.0
+```
+
+**根本原因：** `schema.prisma` 中的 `url = env("DATABASE_URL")` 在 Prisma 7 已被廢除。連線字串需移至 `prisma.config.ts`。
+
+**處置：** 先安裝 `@types/node`（TypeScript 環境依賴）後，將 `DATABASE_URL` 設定移至 `prisma.config.ts`，第三次 `db push` 成功：
+```
+Datasource "db": PostgreSQL database "neondb", schema "public"
+at "ep-bitter-cake-amxachdd-pooler.c-5.us-east-1.aws.neon.tech"
+
+Your database is now in sync with your Prisma schema. Done in 8.06s
+```
+
+---
+
+#### 步驟 4：`yarn prisma generate` 失敗 — 找不到 Client
+
+**錯誤訊息：**
+```
+Error: Could not resolve @prisma/client.
+Please try to install it with yarn install @prisma/client and rerun npx "prisma generate"
+```
+
+**根本原因：** 只安裝了 `prisma`（CLI 工具），沒有安裝 `@prisma/client`（runtime 套件）。這兩個套件是分開的：
+
+| 套件 | 類別 | 用途 |
+| :--- | :--- | :--- |
+| `prisma` | devDependency | CLI 工具（generate / migrate / studio） |
+| `@prisma/client` | dependency | Runtime：在程式碼中 `import { PrismaClient }` |
+
+---
+
+#### 步驟 5：安裝 `@prisma/config` 後版本衝突
+
+執行 `yarn add @prisma/config -D`，yarn 自動安裝了 `@prisma/client@6.19.2`（最新的穩定版），但 CLI 是 `prisma@7.6.0`。
+
+**錯誤訊息：**
+```
+Cannot find module 'D:\user\Desktop\learn\node_modules\@prisma\client\runtime\
+query_compiler_fast_bg.postgresql.wasm-base64.js'
+```
+
+**根本原因：** Prisma CLI（v7）嘗試使用 v7 的 WASM 查詢引擎，但 `@prisma/client`（v6）的 runtime 目錄不包含此 WASM 檔案，兩者無法搭配。
+
+| 版本組合 | 結果 |
+| :--- | :--- |
+| CLI v7 + Client v6 | ❌ WASM 模組找不到 |
+| CLI v6 + Client v6 | ✅ 相容 |
+| CLI v7 + Client v7 | ✅ 相容 |
+
+---
+
+#### 步驟 6：統一版本至 v7.6.0，generate 成功
+
+```bash
+yarn add prisma@7.6.0 @prisma/client@7.6.0 @prisma/config@7.6.0 -D
+```
+
+```
+✔ Generated Prisma Client (v7.6.0) to .\node_modules\@prisma\client in 647ms
+```
+
+---
+
+#### 步驟 7：清空 node_modules 重新安裝，驗證乾淨環境
+
+```powershell
+Remove-Item -Recurse -Force node_modules
+yarn install
+```
+
+`postinstall` hook 自動執行 `prisma generate`，確認從乾淨狀態也能成功產生。
+
+---
+
+## npx 與 Prisma 執行錯誤完整彙整
+
+以下彙整在本地與 CI/CD 環境中遭遇的 `npx` 及 Prisma generate/deploy 問題：
+
+### 錯誤 A：`npx prisma` 在 Windows 環境下無法執行
+
+**現象：** `npx prisma generate` 出現 `command not found` 或 PowerShell 路徑解析失敗。
+
+**原因：** Windows PATH 設定、PowerShell 執行政策，以及 npx 依賴 npm 全域快取，在某些環境配置下無法正確找到本地安裝的二進位檔。
+
+**解決：** 改用 `yarn prisma generate`，確保使用專案 `node_modules/.bin` 內的本地版本。
+
+---
+
+### 錯誤 B：引擎架構不匹配（Binary Target Mismatch）
+
+**現象（Lambda 執行時）：**
+```
+PrismaClientInitializationError: Query engine binary for current platform
+"linux-arm64-openssl-3.0.x" could not be found.
+```
+
+**原因：** `prisma generate` 預設根據「當前執行環境」（GitHub Actions Ubuntu x64 或 Windows x64）下載引擎，但 Lambda 執行在 **arm64** 架構。
+
+**解決：** 在 `schema.prisma` 明確宣告兩個目標：
+```prisma
+binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
+```
+- `native`：本機開發用（Windows/macOS/Ubuntu x64）
+- `linux-arm64-openssl-3.0.x`：Lambda Graviton2 用
+
+---
+
+### 錯誤 C：舊版引擎快取污染（Stale Engine Cache）
+
+**現象：** 明明更新了程式碼，Lambda 依然回傳舊版本的錯誤（如 `Unknown property`）。
+
+**原因：** GitHub Actions 工作目錄或 `node_modules/.prisma` 殘留舊版 Client 檔案，新的 generate 沒有完整覆蓋。
+
+**解決：**
+```bash
+rm -rf node_modules/.prisma
+yarn prisma generate
+```
+
+---
+
+### 錯誤 D：Prisma Client 建構子屬性錯誤
+
+**現象：**
+```
+Unknown property datasourceUrl provided to PrismaClient constructor
+Unknown property datasources provided to PrismaClient constructor
+```
+
+**原因：** CLI 版本與 Client 版本不一致，或使用了錯誤版本的語法。
+
+| 屬性 | Prisma 版本 | 狀態 |
+| :--- | :--- | :--- |
+| `datasources: { db: { url } }` | v4 / v5 | 已廢除 |
+| `datasourceUrl: "..."` | v7（新語法） | 僅 v7 支援 |
+| `new PrismaClient()` | v6（URL 從 env 讀取）| ✅ 推薦 |
+
+**解決：** 統一 `prisma` CLI 與 `@prisma/client` 版本（本專案 Lambda 使用 **v6.6.0**）。
+
+---
+
+### 錯誤 E：打包體積超過 Lambda 限制
+
+**現象：**
+```
+RequestEntityTooLargeException
+```
+
+**原因：** Prisma 引擎包含多平台的 `.node` 二進位檔，全部打包後超過 Lambda API 直傳 50MB 上限。
+
+**解決：**
+1. 打包前刪除非 arm64 引擎：
+   ```bash
+   find node_modules -name "*.node" ! -name "*linux-arm64*" -delete
+   ```
+2. 移除開發用套件（`@prisma/engines`、`prisma` CLI 本身）
+3. 透過 S3 中轉上傳（最大 250MB）
+
+---
+
+## Prisma 部署最佳實踐總結（本地 + CI/CD）
+
+```
+1. 清理環境
+   rm -rf node_modules/.prisma
+   ↓
+2. 精確安裝
+   yarn install --ignore-engines
+   ↓
+3. 指定目標產生引擎
+   binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
+   yarn prisma generate
+   ↓
+4. 精簡打包
+   刪除 x64 引擎 + 開發工具 → zip
+   ↓
+5. S3 中轉部署
+   aws s3 cp → aws lambda update-function-code --s3-bucket
+   ↓
+6. 安全注入環境變數
+   jq 序列化 DATABASE_URL → aws lambda update-function-configuration
+```
