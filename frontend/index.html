@@ -42,6 +42,7 @@
       border-radius: 16px;
       box-shadow: 0 8px 40px rgba(44, 111, 173, 0.15);
       overflow: hidden;
+      align-items: stretch;
     }
 
     /* ── 左側欄 ── */
@@ -51,6 +52,8 @@
       display: flex;
       flex-direction: column;
       gap: 28px;
+      width: 280px;
+      min-width: 280px; /* 避免視窗/內容擠壓導致文字逐字換行 */
     }
 
     .profile-photo {
@@ -96,6 +99,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+      min-width: 0;
     }
 
     .contact-item {
@@ -104,6 +108,18 @@
       gap: 8px;
       font-size: 0.88rem;
       color: var(--text-mid);
+      min-width: 0;
+    }
+
+    /* 避免左側欄位 GitHub 連結在窄寬度時被強制換行造成排版錯亂 */
+    .contact-item a {
+      white-space: nowrap;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: inherit;
+      text-decoration: none;
+      display: inline-block;
     }
 
     .contact-item .icon {
@@ -146,6 +162,7 @@
       display: flex;
       align-items: flex-start;
       gap: 6px;
+      min-width: 0;
     }
 
     .tag-list li::before {
@@ -380,6 +397,16 @@
       color: #fff;
     }
 
+    .inline-link {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .inline-link:hover {
+      text-decoration: underline;
+    }
+
 
     /* RWD */
     @media (max-width: 700px) {
@@ -422,15 +449,9 @@
           </a>
         </div>
         <div class="contact-item">
-          <span class="icon">github</span>
+          <span class="icon">🐙</span>
           <a href="https://github.com/Saibusu" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none;">
             github.com/Saibusu
-          </a>
-          <a href="https://github.com/Saibusu" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none;">
-            大同大學 資訊安全學程
-          </a>
-          <a href="https://github.com/Saibusu" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none;">
-            宜蘭高中
           </a>
         </div>
       </div>
@@ -515,9 +536,9 @@
         <div class="project-card">
           <div class="project-header">
             <h3>雲端資安 Serverless 履歷系統</h3>
-            <a href="https://saibusu.com" target="_blank" class="project-link">saibusu.com ↗</a>
+            <a href="https://github.com/Saibusu/MyCloudResume" target="_blank" class="project-link">github.com/Saibusu/MyCloudResume ↗</a>
           </div>
-          <div class="meta">2026.03 ・ 個人專案</div>
+          <div class="meta">2026.03 ・ 個人專案 ・ GitHub：<a href="https://github.com/Saibusu" target="_blank" class="inline-link" rel="noopener noreferrer">github.com/Saibusu ↗</a></div>
           <span class="role-badge">個人開發 ・ AWS S3 ・ Lambda ・ API Gateway ・ DynamoDB ・ Cloudflare WAF</span>
           <ul class="contrib-list" style="margin-top: 10px;">
             <li><span class="num">1</span>深層防禦（Defense in Depth）：WAF 規則 + S3 Origin Cloaking + API Throttling</li>
