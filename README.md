@@ -1,6 +1,8 @@
 # 李軒杰 — 雲端履歷網站
 
-個人履歷靜態網站，部署於 AWS，整合 Lambda 訪客計數器。
+[![GitHub](https://img.shields.io/badge/GitHub-Saibusu-181717?logo=github)](https://github.com/Saibusu)
+
+個人履歷靜態網站，部署於 AWS，整合 Lambda 訪客計數器。專案原始碼：[github.com/Saibusu/MyCloudResume](https://github.com/Saibusu/MyCloudResume)
 
 後端經歷兩個版本的完整演進：
 
