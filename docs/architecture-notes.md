@@ -748,7 +748,7 @@ Error parsing connection string: invalid port number in database URL.
 **根本原因 B（URL 中的 `@` 被錯誤 URL 編碼）：**
 GitHub Secret 中的 `DATABASE_URL` 被存為：
 ```
-postgresql://neondb_owner:npg_l9SKxOPH1FIc%40ep-bitter-cake...
+postgresql://DB_USER:DB_PASSWORD%40DB_HOST...
 ```
 `%40` 是 `@` 的 URL 編碼。但這個 `@` 是 PostgreSQL URL 的**結構分隔符**（分隔密碼和主機名），不應被編碼。Prisma 看到 `%40` 後把它當成密碼的一部分，整個主機名就消失了，URL 解析完全失敗。
 
@@ -925,7 +925,7 @@ Prisma CLI Version : 7.6.0
 **處置：** 先安裝 `@types/node`（TypeScript 環境依賴）後，將 `DATABASE_URL` 設定移至 `prisma.config.ts`，第三次 `db push` 成功：
 ```
 Datasource "db": PostgreSQL database "neondb", schema "public"
-at "ep-bitter-cake-amxachdd-pooler.c-5.us-east-1.aws.neon.tech"
+at "[your-neondb-pooler-endpoint].neon.tech"
 
 Your database is now in sync with your Prisma schema. Done in 8.06s
 ```
