@@ -10,7 +10,7 @@ export const handler = async (event) => {
     return {
       statusCode: 200,
       headers: {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://saibusu.com",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type"
       },
@@ -19,11 +19,6 @@ export const handler = async (event) => {
   }
 
   try {
-    const dbUrl = process.env.DATABASE_URL || '';
-    console.log('DB_URL_LENGTH:', dbUrl.length);
-    console.log('DB_URL_START:', dbUrl.substring(0, 30));
-    console.log('DB_URL_END:', dbUrl.substring(dbUrl.length - 30));
-
     if (!prisma) {
       prisma = new PrismaClient();
     }
@@ -36,18 +31,18 @@ export const handler = async (event) => {
     return {
       statusCode: 200,
       headers: {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://saibusu.com",
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ count: updatedVisitor.count }),
     };
 
   } catch (error) {
-    console.error('LAMBDA_ERROR:', error.message);
+    console.error('LAMBDA_ERROR:', error);
     return {
       statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "DB_FAIL", message: error.message }),
+      headers: { "Access-Control-Allow-Origin": "https://saibusu.com" },
+      body: JSON.stringify({ error: "SERVICE_UNAVAILABLE" }),
     };
   }
 };
