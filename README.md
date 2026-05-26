@@ -247,7 +247,8 @@ git push origin main
 Cloudflare（DNS + CDN + WAF）
     ↓
 AWS S3（靜態網站 + Chatbot UI）
-    ├─── POST /prod/visitor ──► API Gateway → Lambda（訪客計數）→ NeonDB
+    ├─── POST /prod/visitor ──► API Gateway → Lambda（訪客計數 +1）→ NeonDB
+    ├─── GET  /prod/visitor ──► API Gateway → Lambda（只讀計數，不遞增）→ NeonDB
     └─── POST /chat ──────────► API Gateway ($default) → chatbot-proxy → Lex v2 → chatbot-fulfillment
 ```
 
@@ -256,7 +257,7 @@ AWS S3（靜態網站 + Chatbot UI）
 | 服務 | 角色 | 設定重點 |
 | :--- | :--- | :--- |
 | **Amazon Lex v2** | NLU 引擎 | Bot: ResumeBot, en_US, Bot ID: F7MS13BUCP, Alias: TSTALIASID |
-| **chatbot-fulfillment** | Lex Fulfillment | Python 3.12, arm64；GetVisitorCount 呼叫 /visitor API |
+| **chatbot-fulfillment** | Lex Fulfillment | Python 3.12, arm64；GetVisitorCount 使用 GET /visitor（只讀，不遞增） |
 | **chatbot-proxy** | API → Lex 代理 | Python 3.12, arm64；`lex:RecognizeText` IAM 權限 |
 | **API Gateway /chat** | 新路由 | `POST /chat` on $default stage（URL 無 stage 前綴） |
 
@@ -265,8 +266,9 @@ AWS S3（靜態網站 + Chatbot UI）
 | 測試輸入 | Bot 回應 | 狀態 |
 | :--- | :--- | :--- |
 | `Who are you?` | 李軒杰個人介紹 + GitHub 連結 | ✅ |
-| `How many visitors?` | 實際訪客數字 | ✅ |
+| `How many visitors?` | 實際訪客數字（不遞增計數） | ✅ |
 | 其他輸入 | FallbackIntent 引導訊息 | ✅ |
+| 頁面載入 | POST /visitor 正常遞增 | ✅ |
 
 ---
 

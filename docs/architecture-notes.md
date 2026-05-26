@@ -1007,6 +1007,42 @@ const CHAT_API = 'https://3ai7u70ypd.execute-api.us-east-1.amazonaws.com/chat';
 
 ---
 
+### 錯誤 3：Chatbot 查詢訪客數時計數遞增
+
+**現象：** 每次在 chatbot 輸入「How many visitors?」，訪客計數就 +1。
+
+**根本原因：** `chatbot-fulfillment` Lambda 呼叫 `POST /visitor`，而 POST 的邏輯是「先遞增再回傳」，導致每次查詢都被當成一次真實訪客。
+
+**修正：**
+
+1. `backend/index.mjs` 新增 GET 路由，只讀不遞增：
+```javascript
+// GET：只讀取，不遞增
+if (method === 'GET') {
+  const visitor = await prisma.visitor.findUnique({ where: { id: 1 } });
+  return { ..., body: JSON.stringify({ count: visitor.count }) };
+}
+// POST：遞增計數（頁面載入時觸發）
+const updatedVisitor = await prisma.visitor.update({ ..., data: { count: { increment: 1 } } });
+```
+
+2. `backend/chatbot_fulfillment.py` 改用 GET：
+```python
+# ❌ 舊
+req = urllib.request.Request(VISITOR_API_URL, method="POST", headers={"Content-Type": "application/json"})
+# ✅ 新
+req = urllib.request.Request(VISITOR_API_URL, method="GET")
+```
+
+**最終 API 語意：**
+
+| Method | 用途 | 計數變化 |
+| :--- | :--- | :--- |
+| `POST /visitor` | 頁面載入，記錄真實訪客 | +1 |
+| `GET /visitor` | Chatbot 查詢現有計數 | 不變 |
+
+---
+
 <a id="local-env"></a>
 
 # 本機開發環境建置與 Prisma 7 本地探索記錄

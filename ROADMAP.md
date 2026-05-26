@@ -618,6 +618,7 @@ AWS S3（靜態網站：HTML / CSS / JS）
 - [x] Step 6｜前端加入 Chatbot UI，API URL 填正確（/chat，非 /prod/chat）
 - [x] Step 7｜infrastructure 文件更新（iam-chatbot-policy.json）
 - [x] Step 8｜saibusu.com 上線測試全部通過（"Who are you?" / "How many visitors?" 均正常）
+- [x] 修正｜visitor API 加入 GET 只讀路由，chatbot 查詢不再觸發訪客計數遞增
 
 ---
 
