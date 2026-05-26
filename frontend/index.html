@@ -873,7 +873,7 @@
         const data = await res.json();
         const msgs = document.getElementById('chat-messages');
         msgs.removeChild(msgs.lastChild);
-        addMsg(data.reply, 'bot');
+        addMsg(data.reply || data.errorMessage || 'No response from bot.', 'bot');
       } catch (e) {
         const msgs = document.getElementById('chat-messages');
         msgs.removeChild(msgs.lastChild);

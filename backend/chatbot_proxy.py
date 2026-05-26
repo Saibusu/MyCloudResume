@@ -24,16 +24,19 @@ def lambda_handler(event, context):
     user_message = body.get("message", "")
     session_id   = body.get("session_id", "default-user")
 
-    response = lex.recognize_text(
-        botId=BOT_ID,
-        botAliasId=BOT_ALIAS_ID,
-        localeId=LOCALE_ID,
-        sessionId=session_id,
-        text=user_message
-    )
-
-    messages = response.get("messages", [])
-    reply = messages[0]["content"] if messages else "Sorry, I didn't understand. Try: 'how many visitors' or 'who are you'"
+    try:
+        response = lex.recognize_text(
+            botId=BOT_ID,
+            botAliasId=BOT_ALIAS_ID,
+            localeId=LOCALE_ID,
+            sessionId=session_id,
+            text=user_message
+        )
+        messages = response.get("messages", [])
+        reply = messages[0]["content"] if messages else "Sorry, I didn't understand. Try: 'how many visitors' or 'who are you'"
+    except Exception as e:
+        print(f"LEX_ERROR: {e}")
+        reply = "Chatbot is temporarily unavailable, please try again later."
 
     return {
         "statusCode": 200,
