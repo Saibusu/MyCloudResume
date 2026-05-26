@@ -17,8 +17,7 @@ def handle_visitor_count(event):
     try:
         req = urllib.request.Request(
             VISITOR_API_URL,
-            method="POST",
-            headers={"Content-Type": "application/json"}
+            method="GET"
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
