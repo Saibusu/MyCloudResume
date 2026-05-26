@@ -2,26 +2,28 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-Saibusu-181717?logo=github)](https://github.com/Saibusu)
 
-個人履歷靜態網站，部署於 AWS，整合 Lambda 訪客計數器。專案原始碼：[github.com/Saibusu/MyCloudResume](https://github.com/Saibusu/MyCloudResume)
+個人履歷靜態網站，部署於 AWS，整合 Lambda 訪客計數器與 Amazon Lex v2 智慧 Chatbot。專案原始碼：[github.com/Saibusu/MyCloudResume](https://github.com/Saibusu/MyCloudResume)
 
-後端經歷兩個版本的完整演進：
+後端經歷三個版本的完整演進：
 
-| | v1 | v2（現行）|
-| :--- | :--- | :--- |
-| **後端語言** | Python 3.12 | Node.js 22 |
-| **資料庫** | AWS DynamoDB（NoSQL） | NeonDB（Serverless PostgreSQL） |
-| **ORM** | 無（直接 boto3） | Prisma ORM |
-| **部署方式** | 手動上傳 | GitHub Actions 全自動 CI/CD |
-| **連線管理** | AWS SDK 內建 | Lazy Singleton + Connection Pooler |
+| | v1 | v2 | v3（現行）|
+| :--- | :--- | :--- | :--- |
+| **後端語言** | Python 3.12 | Node.js 22 | Node.js 22 + Python 3.12 |
+| **資料庫** | AWS DynamoDB（NoSQL） | NeonDB（Serverless PostgreSQL） | NeonDB（Serverless PostgreSQL） |
+| **ORM** | 無（直接 boto3） | Prisma ORM | Prisma ORM |
+| **Chatbot** | 無 | 無 | Amazon Lex v2（ResumeBot） |
+| **部署方式** | 手動上傳 | GitHub Actions 全自動 CI/CD | GitHub Actions 全自動 CI/CD |
+| **連線管理** | AWS SDK 內建 | Lazy Singleton + Connection Pooler | Lazy Singleton + Connection Pooler |
 
 ---
 
 ## 專案亮點
 
-**技術棧：AWS (S3, Lambda, API Gateway), NeonDB (PostgreSQL), Prisma ORM, Cloudflare WAF, Node.js / Python, GitHub Actions CI/CD**
+**技術棧：AWS (S3, Lambda, API Gateway, Amazon Lex v2), NeonDB (PostgreSQL), Prisma ORM, Cloudflare WAF, Node.js / Python, GitHub Actions CI/CD**
 
+- **智慧 Chatbot（v3 新增）**：Amazon Lex v2 ResumeBot，支援訪客數查詢與個人介紹，透過 `chatbot-proxy` Lambda 串接前端，Fulfillment 由 `chatbot-fulfillment` Lambda 處理。
 - **深層防禦實作 (Defense in Depth)**：Cloudflare WAF + S3 Bucket Policy IP 白名單（Origin Cloaking）+ API Gateway Throttling，三層聯防。
-- **無伺服器架構**：v1 Lambda + DynamoDB Atomic Counter；v2 Lambda + Prisma ORM + NeonDB Serverless PostgreSQL，兩種方案均解決 Race Condition 問題。
+- **無伺服器架構**：v1 Lambda + DynamoDB Atomic Counter；v2/v3 Lambda + Prisma ORM + NeonDB Serverless PostgreSQL，兩種方案均解決 Race Condition 問題。
 - **成本優化**：Cloudflare 取代 Route 53 DNS 管理（省 $0.50/月），Bot Fight Mode 降低 70%+ 無效流量，NeonDB 無流量自動暫停。
 - **最小權限原則 (Least Privilege)**：精確配置 IAM 政策，`DATABASE_URL` 透過 GitHub Secrets + `jq` 安全注入 Lambda，避免 shell 特殊字元截斷。
 - **全自動 CI/CD**：`git push` 觸發 GitHub Actions，自動完成前端、後端、環境變數、快取清除的全鏈路部署。
@@ -44,22 +46,25 @@
 └── README.md
 ```
 
-## 專案結構（v2 現行）
+## 專案結構（v3 現行）
 
-> 第二版加入 ORM、自動化部署、技術文件等完整工程配置。
+> 第三版加入 Amazon Lex v2 Chatbot，完整 AI 對話整合。
 
 ```
 ├── frontend/
-│   ├── index.html               # 主頁面（履歷 + 訪客計數器 UI）
+│   ├── index.html               # 主頁面（履歷 + 訪客計數器 + Chatbot UI）
 │   └── photo.png                # 大頭貼
 ├── backend/
-│   ├── index.mjs                # Lambda v2（Node.js 22 + Prisma ORM）
-│   └── lambda_function.py       # Lambda v1（Python + DynamoDB，保留參考）
+│   ├── index.mjs                # Lambda v2（Node.js 22 + Prisma ORM，訪客計數）
+│   ├── lambda_function.py       # Lambda v1（Python + DynamoDB，保留參考）
+│   ├── chatbot_fulfillment.py   # Lambda v3（Python，Lex Fulfillment）
+│   └── chatbot_proxy.py         # Lambda v3（Python，API Gateway → Lex 代理）
 ├── prisma/
 │   └── schema.prisma            # Prisma 資料模型（binaryTargets: linux-arm64）
 ├── infrastructure/
 │   ├── s3-bucket-policy.json    # S3 僅允許 Cloudflare IP 存取
-│   └── iam-lambda-policy.json   # Lambda IAM Policy（v1 保留備考）
+│   ├── iam-lambda-policy.json   # Lambda IAM Policy（v1 保留備考）
+│   └── iam-chatbot-policy.json  # chatbot-proxy IAM Policy（lex:RecognizeText）
 ├── docs/
 │   └── architecture-notes.md   # 完整架構技術筆記（含除錯記錄）
 ├── .github/workflows/

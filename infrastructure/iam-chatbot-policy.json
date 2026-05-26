@@ -1,0 +1,10 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "lex:RecognizeText",
+      "Resource": "arn:aws:lex:us-east-1:933613018788:bot-alias/F7MS13BUCP/TSTALIASID"
+    }
+  ]
+}

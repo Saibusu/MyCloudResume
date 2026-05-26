@@ -866,6 +866,108 @@ NeonDB（Serverless PostgreSQL：Visitor table）
 
 ---
 
+# v3 升級：Amazon Lex v2 Chatbot 整合
+
+> 本章記錄在現有 v2 架構基礎上，新增 Amazon Lex v2 智慧 Chatbot 的完整實作流程。
+
+---
+
+## 新增服務說明
+
+| 服務 | 角色 | 設定重點 |
+| :--- | :--- | :--- |
+| **Amazon Lex v2** | 自然語言理解（NLU）引擎 | Bot: ResumeBot, Language: en_US, Bot ID: F7MS13BUCP |
+| **chatbot-fulfillment** | Lex Fulfillment Lambda | Python 3.12, arm64；處理 GetVisitorCount / AskAboutMe Intent |
+| **chatbot-proxy** | API Gateway → Lex 代理 Lambda | Python 3.12, arm64；呼叫 lexv2-runtime RecognizeText API |
+| **API Gateway /chat** | 新增路由 | POST /chat → chatbot-proxy；與既有 /{proxy+} 共存 |
+
+---
+
+## Lex v2 Bot 設計
+
+### Intent 設計
+
+| Intent | 觸發語句 | 處理方式 |
+| :--- | :--- | :--- |
+| `GetVisitorCount` | how many visitors, visitor count | Fulfillment Lambda 呼叫 /prod/visitor API |
+| `AskAboutMe` | who are you, about the owner | Fulfillment Lambda 回傳靜態個人介紹 |
+| `FallbackIntent` | 其他輸入 | Fulfillment Lambda 回傳引導訊息 |
+
+### Lambda Fulfillment 架構
+
+```
+使用者輸入 → Lex v2 NLU → 識別 Intent → 觸發 chatbot-fulfillment Lambda
+                                              │
+                        GetVisitorCount → 呼叫 POST /prod/visitor → 取得訪客數
+                        AskAboutMe     → 回傳靜態個人介紹字串
+                        FallbackIntent → 回傳引導訊息
+```
+
+---
+
+## chatbot-proxy 架構
+
+```python
+# backend/chatbot_proxy.py
+lex.recognize_text(
+    botId="F7MS13BUCP",
+    botAliasId="TSTALIASID",
+    localeId="en_US",
+    sessionId=session_id,
+    text=user_message
+)
+```
+
+**為什麼需要 chatbot-proxy？**
+
+瀏覽器 JavaScript 無法直接呼叫 Lex v2 Runtime API（需要 AWS 簽名 v4），必須透過後端 Lambda 代理，由 Lambda 的 IAM 角色持有 `lex:RecognizeText` 權限。
+
+---
+
+## IAM 設計（最小權限）
+
+`chatbot-proxy` 執行角色僅授予對特定 Bot Alias 的 RecognizeText 權限：
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "lex:RecognizeText",
+  "Resource": "arn:aws:lex:us-east-1:933613018788:bot-alias/F7MS13BUCP/TSTALIASID"
+}
+```
+
+---
+
+## 架構全貌（v3）
+
+```
+使用者瀏覽器 (HTTPS)
+      │
+      ▼
+Cloudflare CDN（WAF + Bot Fight Mode）
+      │
+      ▼
+AWS S3（靜態網站：HTML / CSS / JS）
+      │
+      ├─── fetch POST /prod/visitor ──────► API Gateway
+      │                                          │
+      │                                    Lambda（訪客計數, Node.js 22）
+      │                                          │
+      │                                    NeonDB PostgreSQL
+      │
+      └─── fetch POST /prod/chat ─────────► API Gateway
+                                                 │
+                                           chatbot-proxy Lambda（Python）
+                                                 │
+                                           Amazon Lex v2（ResumeBot, en_US）
+                                                 │
+                                           chatbot-fulfillment Lambda（Python）
+                                                 │
+                                           回傳回應 → 前端對話框顯示
+```
+
+---
+
 <a id="local-env"></a>
 
 # 本機開發環境建置與 Prisma 7 本地探索記錄
