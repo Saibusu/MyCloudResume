@@ -955,7 +955,7 @@ AWS S3（靜態網站：HTML / CSS / JS）
       │                                          │
       │                                    NeonDB PostgreSQL
       │
-      └─── fetch POST /prod/chat ─────────► API Gateway
+      └─── fetch POST /chat ───────────────► API Gateway ($default stage)
                                                  │
                                            chatbot-proxy Lambda（Python）
                                                  │
@@ -965,6 +965,45 @@ AWS S3（靜態網站：HTML / CSS / JS）
                                                  │
                                            回傳回應 → 前端對話框顯示
 ```
+
+---
+
+## v3 除錯記錄
+
+### 錯誤 1：前端顯示 `undefined`（chatbot-proxy 從未被呼叫）
+
+**現象：** 輸入任何問題，Bot 回應 `undefined`。CloudWatch 日誌群組 `/aws/lambda/chatbot-proxy` 不存在（Lambda 從未被呼叫）。
+
+**根本原因：** API Gateway 路由衝突。
+
+| 路由 | 類型 | 實際 URL |
+| :--- | :--- | :--- |
+| `/{proxy+} ANY` | catch-all | 匹配一切路徑，包含 `/prod/chat` |
+| `POST /chat` | 明確路由 | 只匹配 `/chat`（不含 stage 前綴） |
+
+前端使用 `/prod/chat`，被 `/{proxy+}` 攔截，請求轉發至**訪客計數 Lambda**，回傳 `{"count": X}`，導致 `data.reply` 為 undefined。
+
+**修正：** 將前端 CHAT_API 從 `/prod/chat` 改為 `/chat`（$default stage 無 stage 前綴）：
+
+```javascript
+// ❌ 錯誤
+const CHAT_API = 'https://3ai7u70ypd.execute-api.us-east-1.amazonaws.com/prod/chat';
+
+// ✅ 正確（$default stage，路由為 /chat）
+const CHAT_API = 'https://3ai7u70ypd.execute-api.us-east-1.amazonaws.com/chat';
+```
+
+**學習點：** HTTP API Gateway 的 `$default` stage 不在 URL 中加 stage 前綴。新增路由時須確認 stage 對應的 URL 格式。`/{proxy+}` catch-all 優先匹配所有未明確命中的路徑，容易遮蔽新路由。
+
+---
+
+### 錯誤 2：cloudflare-purge-action SHA 不存在
+
+**現象：** GitHub Actions 失敗：`Unable to resolve action @a379f7c, unable to find version`
+
+**根本原因：** 安全加固時填入的 commit SHA `a379f7cfab34e0f287c72c91f8e84a55e4b12e5` 並不存在於 `jakejarvis/cloudflare-purge-action` repo。
+
+**修正：** 查詢正確 SHA：`git ls-remote https://github.com/jakejarvis/cloudflare-purge-action.git`，改為 `eee6dba0236093358f25bb1581bd615dc8b3d8e3`（v0.3.0 最新版）。
 
 ---
 

@@ -608,16 +608,16 @@ AWS S3（靜態網站：HTML / CSS / JS）
 
 ## 各步驟完成打勾
 
-- [ ] Step 1｜Amazon Lex v2 Bot 建立完成，語言設定正確
-- [ ] Step 2｜3 個 Intent 建立完成（GetVisitorCount / AskAboutMe / FallbackIntent）
-- [ ] Step 2｜Bot Build 成功，Lex 內測試通過
-- [ ] Step 3｜`chatbot-fulfillment` Lambda 建立，GetVisitorCount 可回傳訪客數
-- [ ] Step 4｜Lex Bot 串接 Fulfillment Lambda，重新 Build 測試通過
-- [ ] Step 5｜`chatbot-proxy` Lambda 建立，IAM 權限設定完成
-- [ ] Step 5｜API Gateway 新增 `POST /chat` 路由，部署完成
-- [ ] Step 6｜前端加入 Chatbot UI，API URL 填正確
-- [ ] Step 7｜infrastructure 文件更新
-- [ ] Step 8｜saibusu.com 上線測試全部通過
+- [x] Step 1｜Amazon Lex v2 Bot 建立完成，語言設定正確（English US，Bot ID: F7MS13BUCP）
+- [x] Step 2｜3 個 Intent 建立完成（GetVisitorCount / AskAboutMe / FallbackIntent）
+- [x] Step 2｜Bot Build 成功，Lex 內測試通過
+- [x] Step 3｜`chatbot-fulfillment` Lambda 建立，GetVisitorCount 可回傳訪客數
+- [x] Step 4｜Lex Bot 串接 Fulfillment Lambda（TestBotAlias → English US），重新 Build 測試通過
+- [x] Step 5｜`chatbot-proxy` Lambda 建立，IAM 權限設定完成（lex:RecognizeText）
+- [x] Step 5｜API Gateway 新增 `POST /chat` 路由，部署完成（$default stage，URL: /chat）
+- [x] Step 6｜前端加入 Chatbot UI，API URL 填正確（/chat，非 /prod/chat）
+- [x] Step 7｜infrastructure 文件更新（iam-chatbot-policy.json）
+- [x] Step 8｜saibusu.com 上線測試全部通過（"Who are you?" / "How many visitors?" 均正常）
 
 ---
 

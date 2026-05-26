@@ -21,7 +21,7 @@
 
 **技術棧：AWS (S3, Lambda, API Gateway, Amazon Lex v2), NeonDB (PostgreSQL), Prisma ORM, Cloudflare WAF, Node.js / Python, GitHub Actions CI/CD**
 
-- **智慧 Chatbot（v3 新增）**：Amazon Lex v2 ResumeBot，支援訪客數查詢與個人介紹，透過 `chatbot-proxy` Lambda 串接前端，Fulfillment 由 `chatbot-fulfillment` Lambda 處理。
+- **智慧 Chatbot（v3 新增）**：Amazon Lex v2 ResumeBot（English US），支援訪客數查詢與個人介紹，透過 `chatbot-proxy` Lambda 串接前端（`POST /chat`），Fulfillment 由 `chatbot-fulfillment` Lambda 處理。已在 saibusu.com 驗證正常運作。
 - **深層防禦實作 (Defense in Depth)**：Cloudflare WAF + S3 Bucket Policy IP 白名單（Origin Cloaking）+ API Gateway Throttling，三層聯防。
 - **無伺服器架構**：v1 Lambda + DynamoDB Atomic Counter；v2/v3 Lambda + Prisma ORM + NeonDB Serverless PostgreSQL，兩種方案均解決 Race Condition 問題。
 - **成本優化**：Cloudflare 取代 Route 53 DNS 管理（省 $0.50/月），Bot Fight Mode 降低 70%+ 無效流量，NeonDB 無流量自動暫停。
@@ -234,6 +234,39 @@ git push origin main
 3. `git push origin main` → 自動觸發完整部署
 4. API Gateway Throttling：Rate 2, Burst 5
 5. AWS Budgets 警報：$0.01 USD
+
+---
+
+# v3：Amazon Lex v2 Chatbot 整合
+
+## v3 架構
+
+```
+使用者瀏覽器
+    ↓
+Cloudflare（DNS + CDN + WAF）
+    ↓
+AWS S3（靜態網站 + Chatbot UI）
+    ├─── POST /prod/visitor ──► API Gateway → Lambda（訪客計數）→ NeonDB
+    └─── POST /chat ──────────► API Gateway ($default) → chatbot-proxy → Lex v2 → chatbot-fulfillment
+```
+
+## v3 服務說明
+
+| 服務 | 角色 | 設定重點 |
+| :--- | :--- | :--- |
+| **Amazon Lex v2** | NLU 引擎 | Bot: ResumeBot, en_US, Bot ID: F7MS13BUCP, Alias: TSTALIASID |
+| **chatbot-fulfillment** | Lex Fulfillment | Python 3.12, arm64；GetVisitorCount 呼叫 /visitor API |
+| **chatbot-proxy** | API → Lex 代理 | Python 3.12, arm64；`lex:RecognizeText` IAM 權限 |
+| **API Gateway /chat** | 新路由 | `POST /chat` on $default stage（URL 無 stage 前綴） |
+
+## v3 上線測試結果（saibusu.com）
+
+| 測試輸入 | Bot 回應 | 狀態 |
+| :--- | :--- | :--- |
+| `Who are you?` | 李軒杰個人介紹 + GitHub 連結 | ✅ |
+| `How many visitors?` | 實際訪客數字 | ✅ |
+| 其他輸入 | FallbackIntent 引導訊息 | ✅ |
 
 ---
 
