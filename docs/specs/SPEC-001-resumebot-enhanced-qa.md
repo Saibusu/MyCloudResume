@@ -99,8 +99,8 @@ Events: CYBERSEC 2024 Taiwan Security Conference, Team Lab Creative Process Work
   - "how can I contact you" → AskContact
   - "what awards do you have" → AskAchievements
 - [ ] saibusu.com chatbot 實測上述 6 個問題，皆回傳正確文字
-- [ ] 前端 welcome 訊息更新，提示新增的問答主題
-- [ ] `backend/chatbot_fulfillment.py` 已同步 commit 至 GitHub
+- [x] 前端 welcome 訊息更新，提示新增的問答主題
+- [x] `backend/chatbot_fulfillment.py` 已同步 commit 至 GitHub
 
 ## Rollback Plan
 
