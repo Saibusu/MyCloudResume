@@ -63,10 +63,16 @@ def handle_skills(event):
                 "AWS S3, Lambda, API Gateway, DynamoDB, Lex v2, IAM, "
                 "Cloudflare WAF, GitHub Actions CI/CD, Prisma ORM, NeonDB PostgreSQL."
             )
-        elif skill_type == "spoken":
+        elif skill_type in ("spoken", "language", "languages"):
             return close(event,
                 "Spoken languages: "
                 "Chinese (native), English (proficient), Japanese (basic)."
+            )
+        else:
+            return close(event,
+                "Skills: Programming (C, C++, PHP, Java, JS, SQL), "
+                "Cloud (AWS, Cloudflare WAF, CI/CD), "
+                "Spoken languages (Chinese, English, Japanese)."
             )
 
     # Slot not yet filled — delegate back to Lex to elicit the slot
@@ -93,6 +99,11 @@ def handle_projects(event):
                 "Live at: crypto.ttu.taipei (2024-2025). "
                 "Guided by Prof. Huang Kuo-Hsuan."
             )
+        else:
+            return close(event,
+                "I have 2 projects: 1) Cloud Resume (github.com/Saibusu/MyCloudResume) "
+                "2) Cryptography Platform (crypto.ttu.taipei). Ask me about one specifically!"
+            )
 
     return delegate(event)
 
@@ -110,10 +121,15 @@ def handle_education(event):
                 "enrolled in the Information Security program. "
                 "Class rank: 42nd out of ~141 students (top 29.86%)."
             )
-        elif edu_type == "high school":
+        elif edu_type in ("high school", "highschool", "yilan"):
             return close(event,
                 "Yi-Lan Senior High School (宜蘭高中): "
                 "Completed high school before entering Tatung University."
+            )
+        else:
+            return close(event,
+                "Education: Tatung University (Computer Science + Information Security). "
+                "Previously: Yi-Lan Senior High School. Class rank: 42nd / ~141 (top 29.86%)."
             )
 
     return delegate(event)
@@ -137,11 +153,17 @@ def handle_experience(event):
                 "TYPL Engineering Faculty Exchange event coordinator, "
                 "Media Design Department Design Week organizer."
             )
-        elif exp_type == "part-time":
+        elif exp_type in ("part-time", "part time", "job", "work"):
             return close(event,
                 "Part-time work: "
                 "College of Engineering administrative office, "
                 "food service industry."
+            )
+        else:
+            return close(event,
+                "Experience: Teaching TA (2024-2026), "
+                "Events coordinator (TYPL, Design Week), "
+                "Part-time at College of Engineering admin office."
             )
 
     return delegate(event)
@@ -165,17 +187,24 @@ def handle_achievements(event):
             return close(event,
                 "Awards: PUPC 2024 Bronze Award."
             )
-        elif ach_type == "certificates":
+        elif ach_type in ("certificates", "certificate"):
             return close(event,
                 "Certifications: Gemini Certified Educator, "
                 "AWS Cloud Security Serverless Architecture Implementation."
             )
-        elif ach_type == "events":
+        elif ach_type in ("events", "event"):
             return close(event,
                 "Notable events attended: "
                 "CYBERSEC 2024 Taiwan Cybersecurity Conference, "
                 "Team Lab Creative Process Workshop, "
                 "Taiwan-Japan Cultural Exchange Design."
+            )
+        else:
+            return close(event,
+                "Achievements: "
+                "Awards: PUPC 2024 Bronze Award. "
+                "Certifications: Gemini Certified Educator. "
+                "Events: CYBERSEC 2024, Team Lab Workshop, Taiwan-Japan Cultural Exchange."
             )
 
     return delegate(event)

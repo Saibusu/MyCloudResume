@@ -1093,6 +1093,88 @@ req = urllib.request.Request(VISITOR_API_URL, method="GET")
 
 ---
 
+### 錯誤 4：新增 Intent 全部顯示「Loading...」
+
+**現象：** 擴充 6 個新 Intent（AskSkills, AskProjects 等）後，在 chatbot 測試時所有新 Intent 都只顯示「Loading...」，不呈現實際回應。
+
+**根本原因：** 新建立的 Intent 沒有啟用 Lambda Code Hook。Lex v2 的運作邏輯如下：
+
+| Intent 設定 | Lex 行為 |
+| :--- | :--- |
+| 未勾選 Code Hook | 直接使用 Closing Response 文字（即「Loading...」） |
+| 勾選 Code Hook（Dialog / Fulfillment） | 呼叫 Alias 層級設定的 Lambda |
+
+原有的 GetVisitorCount / AskAboutMe 有設定 Code Hook，Lambda 能被呼叫。新建立的 6 個 Intent 沒有勾選，Lex 直接回傳 Closing Response 的預留文字。
+
+**修正：** 對每個新 Intent → 頁面最下方 **「程式碼掛接 - 選用」** → 勾選「使用 Lambda 函數進行初始化和驗證」→ 儲存意圖 → 重新 Build。
+
+**學習點：** Lex v2 的 Lambda 連接是「Alias 層級設定函數 + Intent 層級勾選啟用」兩層才能觸發，缺一不可。只設定 Alias Lambda 但 Intent 未勾選，Lambda 不會被呼叫。
+
+---
+
+### 錯誤 5：多輪對話 Slot 無限循環（Loop）
+
+**現象：** 在多輪對話中，使用者輸入有效的 Slot 值（如 `events`、`certificate`）後，Bot 不斷重複問同一個問題，無法進入下一步。
+
+**根本原因 A：NLU 衝突（`events` 同時存在多個 Slot Type）**
+
+`events` 同時是 `AchievementType` 的值，也是 `ExperienceType` 的同義詞（activities 的同義詞）。當使用者在填入 `achievementType` Slot 時輸入「events」，Lex NLU 可能將其解析為觸發 `AskExperience` Intent，而非填入當前 Slot，導致對話狀態重置。
+
+**根本原因 B：單複數形式不匹配（`certificate` vs `certificates`）**
+
+Slot Type 定義的值為 `certificates`（複數），但使用者輸入 `certificate`（單數）。Slot resolution 設定為「限制為位置值」時，無法匹配，Slot 始終為空，Bot 持續詢問。
+
+**根本原因 C：Lambda 未處理 else 情境導致無限 Delegate**
+
+```python
+# ❌ 有問題的邏輯
+if ach_type == "awards":   return close(...)
+elif ach_type == "certificates": return close(...)
+elif ach_type == "events": return close(...)
+# 若 Slot 有值但不匹配以上任一條件 → 落入 delegate(event)
+# → Lex 再次詢問 → 使用者再次輸入 → 再次 delegate → 無限循環
+return delegate(event)
+```
+
+**修正 A：Lex Console 補充同義詞**
+
+在 `AchievementType` Slot Type 新增：
+- `certificates` → 新增同義詞：`certificate`
+- `events` → 新增同義詞：`event`、`conference`
+
+**修正 B：Lambda 加 else 兜底，破除循環**
+
+```python
+# ✅ 正確做法：Slot 已填入但不匹配任何分支時，回傳完整摘要而非 delegate
+if ach_slot and ach_slot.get("value"):
+    ach_type = ach_slot["value"]["interpretedValue"].lower()
+    if ach_type == "awards":
+        return close(event, "Awards: PUPC 2024 Bronze Award.")
+    elif ach_type in ("certificates", "certificate"):
+        return close(event, "Certifications: ...")
+    elif ach_type in ("events", "event"):
+        return close(event, "Notable events: ...")
+    else:
+        # Slot 有值但未命中任何分支 → 回傳完整摘要，防止無限循環
+        return close(event, "Achievements summary: ...")
+return delegate(event)  # 只有 Slot 為空時才 delegate
+```
+
+**修正 C：Lambda 對 Slot 值加入多形式比對**
+
+```python
+# 同時處理單複數、連字符等變體
+elif exp_type in ("part-time", "part time", "job", "work"):
+    return close(event, "Part-time work: ...")
+```
+
+**學習點：**
+- Slot 值設計應包含使用者可能輸入的所有形式（單複數、縮寫、同義詞）
+- Lambda 必須為 Slot 已填入但不匹配任何分支的情況設置 `else` fallback，避免 `delegate` 造成循環
+- 不同 Slot Type 之間的同義詞應盡量避免重疊，否則 NLU 在 Slot 填入階段容易混淆
+
+---
+
 <a id="local-env"></a>
 
 # 本機開發環境建置與 Prisma 7 本地探索記錄
