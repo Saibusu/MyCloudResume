@@ -1175,6 +1175,104 @@ elif exp_type in ("part-time", "part time", "job", "work"):
 
 ---
 
+### 錯誤 6：Slot 回答被 Lex 路由至 FallbackIntent，對話上下文遺失
+
+**現象：** Bot 問「Which type of skills? (programming / cloud / spoken languages)」後，使用者輸入 `cloud`、`teaching`、`awards` 等正確答案，Bot 卻回應「Sorry, I didn't understand. You can ask me: - How many visitors?...」，且問題無法繼續。
+
+**根本原因：Lex NLU 在 Slot 填充階段將使用者答案錯誤路由至 FallbackIntent**
+
+當 Bot 處於 Slot 填充狀態，使用者下一句話有兩種可能：
+1. Lex 成功辨識為 Slot 值 → 填入 Slot → 呼叫 Lambda → 回傳答案 ✅
+2. Lex 無法辨識為 Slot 值 → 觸發 **FallbackIntent** → 顯示 FallbackIntent 的 Closing Response ❌
+
+觸發路由 2 的原因：部分 Slot 值（如 `cloud`、`teaching`、`awards`）與其他 Intent 的 Utterances 語意重疊，或 NLU 信心度不足，導致 Lex 放棄 Slot 填充並改觸發 FallbackIntent。
+
+**為什麼部分值成功、部分值失敗？**
+
+| 成功（Lex 識別為 Slot 值）| 失敗（被路由至 FallbackIntent）|
+| :--- | :--- |
+| programming, spoken languages | cloud（與 AskSkills utterance 重疊）|
+| activities, university, high school | teaching（與 AskExperience utterance 重疊）|
+| cryptography system | awards, certificates（與 AskAchievements utterance 重疊）|
+
+**FallbackIntent 沒有 Code Hook → 上下文完全遺失**
+
+FallbackIntent 觸發後，因為 Code Hook 未啟用，Lex 直接顯示 FallbackIntent 的靜態 Closing Response 文字，Lambda 完全未被呼叫，之前的對話狀態（正在詢問哪個 Slot）也隨之消失。
+
+**修正：Session Attributes + FallbackIntent Code Hook 雙管齊下**
+
+**修正 A：每次詢問 Slot 時，在 Session Attributes 記錄 `pending` 狀態**
+
+```python
+def ask_pending(event, slot_name, topic, message):
+    attrs = {**_session_attrs(event), "pending": topic}  # 記錄 pending 話題
+    return {
+        "sessionState": {
+            "dialogAction": {"type": "ElicitSlot", "slotToElicit": slot_name},
+            "intent": event["sessionState"]["intent"],
+            "sessionAttributes": attrs   # 跨 Intent 保留，FallbackIntent 也能讀到
+        },
+        "messages": [{"contentType": "PlainText", "content": message}]
+    }
+```
+
+**為什麼 Session Attributes 能跨 Intent 存活？**
+Lex v2 的 Session Attributes 屬於 Session 層級，不屬於特定 Intent。即使 FallbackIntent 被觸發，Session Attributes 仍保留上一輪設定的值。
+
+**修正 B：啟用 FallbackIntent Code Hook，Lambda 接管 FallbackIntent**
+
+Lex Console → FallbackIntent → 程式碼掛接 → 勾選「使用 Lambda 函數進行初始化和驗證」→ 儲存 → Build
+
+**修正 C：Lambda 新增 FallbackIntent Handler，讀取 `pending` 恢復上下文**
+
+```python
+def handle_fallback(event):
+    pending = _session_attrs(event).get("pending", "")
+    t = _transcript(event)          # 讀取使用者原始輸入
+
+    if pending == "skills":
+        return respond(event, _skills_text(_match_skill(t) or "all"))
+    if pending == "experience":
+        return respond(event, _experience_text(_match_experience(t) or "all"))
+    # ... 其他 pending 狀態 ...
+
+    return respond(event, "Sorry, I didn't understand. Try: skills, projects, education...")
+```
+
+**修正 D：使用 `inputTranscript` 直接比對關鍵字，不依賴 Lex Slot 填充**
+
+```python
+def _match_experience(t):
+    if any(w in t for w in ["teaching", "ta", "teacher", "lab", "assistant"]):
+        return "teaching"
+    if any(w in t for w in ["activities", "activity", "coordinator", "organizer"]):
+        return "activities"
+    if any(w in t for w in ["part", "job", "work", "part-time"]):
+        return "part-time"
+    return None
+```
+
+**完整對話流程（修正後）：**
+
+```
+使用者: "What experience?"
+Lambda: AskExperience → transcript 無法比對 → ask_pending() 設 pending="experience"
+Bot回應: "Which experience? (teaching / activities / part-time)"
+
+使用者: "teaching"
+Lex NLU: 無法匹配 → 觸發 FallbackIntent
+Lambda: handle_fallback() → pending="experience" → _match_experience("teaching") = "teaching"
+Bot回應: "Teaching experience: Programming Learning Center TA..."  ✅
+```
+
+**學習點：**
+- Lex 的 Slot 填充和 Intent 辨識是同一個 NLU pipeline，語意重疊的詞彙可能被誤判為 Intent 而非 Slot 值
+- Session Attributes 是解決跨 Intent 狀態傳遞的標準做法
+- FallbackIntent Code Hook 是多輪對話的最後防線，必須啟用才能處理 NLU 辨識失敗的情況
+- `inputTranscript` 直接讀取使用者原始輸入，比依賴 Lex Slot 填充更可靠
+
+---
+
 <a id="local-env"></a>
 
 # 本機開發環境建置與 Prisma 7 本地探索記錄
