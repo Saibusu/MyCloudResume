@@ -44,35 +44,107 @@ def handle_about_me(event):
     )
 
 def handle_skills(event):
-    return close(event,
-        "My technical skills: "
-        "Core languages: C, C++, PHP, Java. "
-        "Web: HTML, CSS, JavaScript. "
-        "Database: SQL. "
-        "Cloud & Security: AWS S3, Lambda, API Gateway, DynamoDB, Cloudflare WAF, IAM. "
-        "Languages: Chinese, English, Japanese."
-    )
+    slots = event["sessionState"]["intent"].get("slots", {})
+    skill_slot = slots.get("skillType")
+
+    if skill_slot and skill_slot.get("value"):
+        skill_type = skill_slot["value"]["interpretedValue"].lower()
+
+        if skill_type == "programming":
+            return close(event,
+                "Programming skills: "
+                "Core languages: C, C++, PHP, Java. "
+                "Web: HTML, CSS, JavaScript. "
+                "Database: SQL."
+            )
+        elif skill_type == "cloud":
+            return close(event,
+                "Cloud & DevOps skills: "
+                "AWS S3, Lambda, API Gateway, DynamoDB, Lex v2, IAM, "
+                "Cloudflare WAF, GitHub Actions CI/CD, Prisma ORM, NeonDB PostgreSQL."
+            )
+        elif skill_type == "spoken":
+            return close(event,
+                "Spoken languages: "
+                "Chinese (native), English (proficient), Japanese (basic)."
+            )
+
+    # Slot not yet filled — delegate back to Lex to elicit the slot
+    return delegate(event)
 
 def handle_projects(event):
-    return close(event,
-        "I have 2 main projects: "
-        "1) Cloud Security Serverless Resume System — personal project with Defense in Depth (WAF + S3 Origin Cloaking + API Throttling), DynamoDB Atomic Counter, Amazon Lex v2 Chatbot. GitHub: github.com/Saibusu/MyCloudResume. "
-        "2) Gamified Cryptography Learning System — team leader for a cryptography challenge platform (crypto.ttu.taipei), focused on system architecture, API design, and security. Guided by Prof. Huang Kuo-Hsuan."
-    )
+    slots = event["sessionState"]["intent"].get("slots", {})
+    project_slot = slots.get("projectType")
+
+    if project_slot and project_slot.get("value"):
+        project_type = project_slot["value"]["interpretedValue"].lower()
+
+        if project_type == "resume":
+            return close(event,
+                "Cloud Security Serverless Resume System: "
+                "Defense in Depth architecture (WAF + S3 Origin Cloaking + API Throttling), "
+                "DynamoDB Atomic Counter, Amazon Lex v2 Chatbot, NeonDB + Prisma ORM. "
+                "GitHub: github.com/Saibusu/MyCloudResume"
+            )
+        elif project_type == "cryptography":
+            return close(event,
+                "Gamified Cryptography Learning System: "
+                "Team leader responsible for system architecture, API design, and backend. "
+                "Live at: crypto.ttu.taipei (2024-2025). "
+                "Guided by Prof. Huang Kuo-Hsuan."
+            )
+
+    return delegate(event)
 
 def handle_education(event):
-    return close(event,
-        "I study at Tatung University (大同大學), majoring in Computer Science and enrolled in the Information Security program. "
-        "I previously attended Yilan Senior High School. "
-        "Current class rank: 42nd out of ~141 students (top 29.86%)."
-    )
+    slots = event["sessionState"]["intent"].get("slots", {})
+    edu_slot = slots.get("educationType")
+
+    if edu_slot and edu_slot.get("value"):
+        edu_type = edu_slot["value"]["interpretedValue"].lower()
+
+        if edu_type == "university":
+            return close(event,
+                "Tatung University (大同大學): "
+                "Major in Computer Science and Engineering, "
+                "enrolled in the Information Security program. "
+                "Class rank: 42nd out of ~141 students (top 29.86%)."
+            )
+        elif edu_type == "high school":
+            return close(event,
+                "Yi-Lan Senior High School (宜蘭高中): "
+                "Completed high school before entering Tatung University."
+            )
+
+    return delegate(event)
 
 def handle_experience(event):
-    return close(event,
-        "Teaching: Programming Learning Center TA (2024 both semesters), Programming Lab I & II TA (2026). "
-        "Activities: TYPL Engineering Faculty exchange event coordinator, Media Design Department Design Week organizer. "
-        "Part-time: College of Engineering administrative office, food service industry."
-    )
+    slots = event["sessionState"]["intent"].get("slots", {})
+    exp_slot = slots.get("experienceType")
+
+    if exp_slot and exp_slot.get("value"):
+        exp_type = exp_slot["value"]["interpretedValue"].lower()
+
+        if exp_type == "teaching":
+            return close(event,
+                "Teaching experience: "
+                "Programming Learning Center TA (2024, both semesters), "
+                "Programming Lab I & II TA (2026)."
+            )
+        elif exp_type == "activities":
+            return close(event,
+                "Activities & events: "
+                "TYPL Engineering Faculty Exchange event coordinator, "
+                "Media Design Department Design Week organizer."
+            )
+        elif exp_type == "part-time":
+            return close(event,
+                "Part-time work: "
+                "College of Engineering administrative office, "
+                "food service industry."
+            )
+
+    return delegate(event)
 
 def handle_contact(event):
     return close(event,
@@ -83,16 +155,40 @@ def handle_contact(event):
     )
 
 def handle_achievements(event):
-    return close(event,
-        "Certifications: Gemini Certified Educator. "
-        "Awards: PUPC 2024 Bronze Award. "
-        "Notable experiences: CYBERSEC 2024 Taiwan Cybersecurity Conference, "
-        "Team Lab Creative Process Workshop, "
-        "Taiwan-Japan Cultural Exchange Design, "
-        "AWS Cloud Security Serverless Architecture Implementation."
-    )
+    slots = event["sessionState"]["intent"].get("slots", {})
+    ach_slot = slots.get("achievementType")
 
-# ── Helper ────────────────────────────────────────────────────
+    if ach_slot and ach_slot.get("value"):
+        ach_type = ach_slot["value"]["interpretedValue"].lower()
+
+        if ach_type == "awards":
+            return close(event,
+                "Awards: PUPC 2024 Bronze Award."
+            )
+        elif ach_type == "certificates":
+            return close(event,
+                "Certifications: Gemini Certified Educator, "
+                "AWS Cloud Security Serverless Architecture Implementation."
+            )
+        elif ach_type == "events":
+            return close(event,
+                "Notable events attended: "
+                "CYBERSEC 2024 Taiwan Cybersecurity Conference, "
+                "Team Lab Creative Process Workshop, "
+                "Taiwan-Japan Cultural Exchange Design."
+            )
+
+    return delegate(event)
+
+# ── Helpers ───────────────────────────────────────────────────
+
+def delegate(event):
+    return {
+        "sessionState": {
+            "dialogAction": {"type": "Delegate"},
+            "intent": event["sessionState"]["intent"]
+        }
+    }
 
 def close(event, message):
     return {

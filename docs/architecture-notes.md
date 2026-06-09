@@ -877,7 +877,7 @@ NeonDB（Serverless PostgreSQL：Visitor table）
 | 服務 | 角色 | 設定重點 |
 | :--- | :--- | :--- |
 | **Amazon Lex v2** | 自然語言理解（NLU）引擎 | Bot: ResumeBot, Language: en_US, Bot ID: F7MS13BUCP |
-| **chatbot-fulfillment** | Lex Fulfillment Lambda | Python 3.12, arm64；處理 GetVisitorCount / AskAboutMe Intent |
+| **chatbot-fulfillment** | Lex Fulfillment Lambda | Python 3.12, arm64；處理 8 個 Intent + 多輪對話 Slot 邏輯 |
 | **chatbot-proxy** | API Gateway → Lex 代理 Lambda | Python 3.12, arm64；呼叫 lexv2-runtime RecognizeText API |
 | **API Gateway /chat** | 新增路由 | POST /chat → chatbot-proxy；與既有 /{proxy+} 共存 |
 
@@ -885,22 +885,72 @@ NeonDB（Serverless PostgreSQL：Visitor table）
 
 ## Lex v2 Bot 設計
 
-### Intent 設計
+### Intent 設計（v3 擴充版）
 
-| Intent | 觸發語句 | 處理方式 |
+| Intent | 觸發語句範例 | Slot | 處理方式 |
+| :--- | :--- | :--- | :--- |
+| `GetVisitorCount` | how many visitors, visitor count | 無 | Lambda 呼叫 GET /visitor API |
+| `AskAboutMe` | who are you, about the owner | 無 | Lambda 回傳靜態個人介紹 |
+| `AskSkills` | what skills, what tech stack | `skillType` | 多輪：Bot 反問類別，Lambda 回傳對應技能 |
+| `AskProjects` | what projects, show me your work | `projectType` | 多輪：Bot 反問哪個專案，Lambda 回傳詳細介紹 |
+| `AskEducation` | where did you study, education | `educationType` | 多輪：Bot 反問大學/高中，Lambda 回傳學歷 |
+| `AskExperience` | what is your experience, teaching | `experienceType` | 多輪：Bot 反問類別，Lambda 回傳經歷 |
+| `AskContact` | how can I contact you, email | 無 | Lambda 回傳聯絡資訊 |
+| `AskAchievements` | what awards, certificates | `achievementType` | 多輪：Bot 反問類別，Lambda 回傳成就 |
+| `FallbackIntent` | 其他輸入 | 無 | Lex 內建引導訊息 |
+
+### Slot Type 設計
+
+| Slot Type | 值 | 同義詞（節錄） |
 | :--- | :--- | :--- |
-| `GetVisitorCount` | how many visitors, visitor count | Fulfillment Lambda 呼叫 /prod/visitor API |
-| `AskAboutMe` | who are you, about the owner | Fulfillment Lambda 回傳靜態個人介紹 |
-| `FallbackIntent` | 其他輸入 | Fulfillment Lambda 回傳引導訊息 |
+| `SkillType` | programming, cloud, spoken | coding / aws / language |
+| `ProjectType` | resume, cryptography | serverless / crypto / ttu |
+| `EducationType` | university, high school | tatung / yilan |
+| `ExperienceType` | teaching, activities, part-time | ta / events / job |
+| `AchievementType` | awards, certificates, events | pupc / gemini / cybersec |
+
+### 多輪對話架構（Dialog Code Hook）
+
+所有含 Slot 的 Intent 均啟用 **Dialog Code Hook**，Lambda 在每一輪對話都被呼叫：
+
+```
+使用者輸入 → Lex v2 NLU → 識別 Intent → 呼叫 chatbot-fulfillment（dialog hook）
+                                              │
+                              Slot 未填入 → 回傳 Delegate → Lex 自動問提示語
+                              Slot 已填入 → 回傳 Close + 對應回應字串
+```
+
+**Delegate 回傳範例（Slot 未填入時）：**
+```python
+return {
+    "sessionState": {
+        "dialogAction": {"type": "Delegate"},
+        "intent": event["sessionState"]["intent"]
+    }
+}
+```
+
+**對話範例：**
+```
+User: what skills do you have
+Bot:  Which type of skills? (programming / cloud / spoken languages)
+User: cloud
+Bot:  Cloud & DevOps skills: AWS S3, Lambda, API Gateway, DynamoDB...
+```
 
 ### Lambda Fulfillment 架構
 
 ```
 使用者輸入 → Lex v2 NLU → 識別 Intent → 觸發 chatbot-fulfillment Lambda
                                               │
-                        GetVisitorCount → 呼叫 POST /prod/visitor → 取得訪客數
-                        AskAboutMe     → 回傳靜態個人介紹字串
-                        FallbackIntent → 回傳引導訊息
+                     GetVisitorCount  → GET /visitor API → 取得訪客數
+                     AskAboutMe       → 回傳靜態個人介紹
+                     AskContact       → 回傳聯絡資訊
+                     AskSkills        → 讀取 skillType slot → 回傳對應技能
+                     AskProjects      → 讀取 projectType slot → 回傳專案詳情
+                     AskEducation     → 讀取 educationType slot → 回傳學歷
+                     AskExperience    → 讀取 experienceType slot → 回傳經歷
+                     AskAchievements  → 讀取 achievementType slot → 回傳成就
 ```
 
 ---
