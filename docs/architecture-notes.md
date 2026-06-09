@@ -1273,6 +1273,56 @@ Bot回應: "Teaching experience: Programming Learning Center TA..."  ✅
 
 ---
 
+### 錯誤 7：Session Attributes 未被 Lex 持久化，對話狀態無法跨輪保留
+
+**現象：** Bot 問「Which type of skills?」後，使用者輸入 `cloud` 仍出現 Lambda 兜底錯誤訊息「Sorry, I didn't understand. Try asking about: skills, projects...」，代表 FallbackIntent Lambda 有被呼叫，但 `pending` session attribute 為空。
+
+**診斷方式：** 在 `lambda_handler` 加入 debug 日誌，部署後觸發對話，在 CloudWatch 觀察每次呼叫的 `sessionAttrs` 欄位。
+
+**CloudWatch 日誌確認（每輪 sessionAttrs 均為空）：**
+
+```
+{"intent": "AskSkills",      "transcript": "What are your skills?", "sessionAttrs": {}}
+{"intent": "AskSkills",      "transcript": "programming",           "sessionAttrs": {}}  ← 應為 {pending: skills}
+{"intent": "FallbackIntent", "transcript": "cloud",                 "sessionAttrs": {}}  ← 應為 {pending: skills}
+{"intent": "AskSkills",      "transcript": "spoken languages",      "sessionAttrs": {}}
+```
+
+**根本原因：** Lex v2 TestBotAlias（TSTALIASID）不會持久化 Lambda Dialog Code Hook 回傳的 `sessionAttributes`。Lambda 在 `ask_pending()` 回傳 `ElicitSlot` 時設定的 `{"pending": "skills"}`，下一輪呼叫時完全消失，導致 `handle_fallback()` 無法識別對話上下文。
+
+**附帶發現：** `programming` 成功的原因不是 session attributes，而是 Lex NLU 將 "programming" 路由回 AskSkills（與 utterances 語意相近），`handle_skills()` 的 `_match_skill("programming")` 直接從 inputTranscript 比對成功。`cloud` 失敗是因為 Lex NLU 將其路由至 FallbackIntent，而 `pending` 為空。
+
+**修正：改為豐富化 Intent utterances，讓 Lex 直接路由子類別關鍵字**
+
+不依賴 session attributes，在各 Intent 加入子類別關鍵字作為 utterances，讓 Lex NLU 直接將子類別答案路由到正確 Intent：
+
+| Intent | 新增 utterances |
+| :--- | :--- |
+| AskSkills | cloud, cloud skills, aws skills, devops skills, programming, programming skills, spoken languages, languages, what languages do you speak |
+| AskProjects | resume site, cryptography, cryptography project |
+| AskEducation | university, high school, tatung |
+| AskExperience | teaching, activities, part-time, part time job |
+| AskAchievements | awards, certificates, events, what events |
+
+**修正後對話流程：**
+
+```
+使用者: "what skills do you have"
+Bot:   "Which type of skills? (programming / cloud / spoken languages)"
+
+使用者: "cloud"
+Lex NLU: "cloud" 命中 AskSkills utterance → 路由到 AskSkills（非 FallbackIntent）
+Lambda: handle_skills() → _match_skill("cloud") = "cloud" → 回傳 Cloud skills ✅
+```
+
+**學習點：**
+- Session Attributes 在 TSTALIASID 下不可靠；正式部署 alias 行為可能不同，但無法依賴
+- 豐富化 utterances 比 session attributes 更穩健：無需狀態機，Lex 直接命中 Intent
+- `_match_*()` 系列函數的 inputTranscript 直接比對是最後防線，確保即使 Slot 未填入也能回傳正確答案
+- 多輪對話的子類別問答不需要嚴格的 Lex Slot 機制，utterance 豐富化 + Lambda 關鍵字比對已足夠
+
+---
+
 <a id="local-env"></a>
 
 # 本機開發環境建置與 Prisma 7 本地探索記錄

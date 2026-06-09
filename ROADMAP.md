@@ -619,6 +619,11 @@ AWS S3（靜態網站：HTML / CSS / JS）
 - [x] Step 7｜infrastructure 文件更新（iam-chatbot-policy.json）
 - [x] Step 8｜saibusu.com 上線測試全部通過（"Who are you?" / "How many visitors?" 均正常）
 - [x] 修正｜visitor API 加入 GET 只讀路由，chatbot 查詢不再觸發訪客計數遞增
+- [x] v3 擴充｜多輪對話（Multi-turn Conversational Q&A）：5 個 Slot-based Intent（AskSkills / AskProjects / AskEducation / AskExperience / AskAchievements）+ 5 個 Slot Type 設計完成
+- [x] 修正｜新 Intent 顯示 Loading... → 啟用各 Intent Dialog Code Hook（程式碼掛接）
+- [x] 修正｜多輪對話 Slot 無限循環 → Lambda 加 else 兜底 + 補充單複數同義詞
+- [x] 修正｜FallbackIntent Code Hook 啟用 → handle_fallback() 以 pending + inputTranscript 恢復上下文
+- [x] 修正｜Session Attributes 未被 Lex（TSTALIASID）持久化（CloudWatch 日誌確認）→ 改為豐富化各 Intent utterances，讓 Lex 直接路由子類別關鍵字，不依賴狀態機
 
 ---
 
